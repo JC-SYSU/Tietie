@@ -1,0 +1,61 @@
+name: Copy
+options:
+  bundleIdPrefix: com.tarikbc
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  CopyCore:
+    path: CopyCore
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 3.0.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+targets:
+  Copy:
+    type: application
+    platform: macOS
+    sources:
+      - Copy
+      - Copy/Assets.xcassets
+    dependencies:
+      - package: CopyCore
+      - package: KeyboardShortcuts
+      - package: Sparkle
+    scheme:
+      testTargets: []
+    info:
+      path: Copy/Info.plist
+      properties:
+        CFBundleDisplayName: Copy
+        CFBundleShortVersionString: "0.1.3"
+        CFBundleVersion: "4"
+        LSUIElement: true
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "© 2026 Tarik Caramanico - GPL-3.0"
+        # Sparkle auto-update feed. SUPublicEDKey is Copy's dedicated EdDSA
+        # public key (generated under the `copy` keychain account; the private
+        # key is backed up outside the repo, see Scripts/sparkle-keys-README.md).
+        SUFeedURL: https://tarikbc.github.io/Copy/appcast.xml
+        SUPublicEDKey: "T/g8uQqB0Ki0cQTD43Mjk5KC4YRtBYMUfg5QduAnH2c="
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        # Declares the internal card-drag payload type (see ShelfViewModel.UTType.copyItem)
+        # so the system recognizes it during real drag-and-drop, not just as an in-process
+        # string constant. Required for card → pinboard tab filing to work.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.tarikbc.copy.item
+            UTTypeDescription: Copy clipboard item
+            UTTypeConformsTo:
+              - public.data
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tarikbc.Copy
+        MARKETING_VERSION: "0.1.3"
+        SWIFT_VERSION: "5.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: P7V47BUA2B
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
