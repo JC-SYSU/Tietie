@@ -74,22 +74,9 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
     var onCardDrop: ((CGPoint, [String]?) -> Bool)?
     /// A pinboard tab dropped at `point` with its id (nil if unreadable); returns success.
     var onPinboardDrop: ((CGPoint, Int64?) -> Bool)?
-    /// Where a scroll wheel lands when the pointer is over a dead pixel of the SwiftUI
-    /// content: hit-test misses there let scroll events reach whatever window sits behind
-    /// the panel (a Chrome page swipe while swiping the rail). The dead point is claimed
-    /// for the panel and the scroll routed to the card rail instead.
-    var scrollRoute: () -> NSScrollView? = { nil }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) ?? self
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        if let scrollView = scrollRoute() {
-            scrollView.scrollWheel(with: event)
-        } else {
-            super.scrollWheel(with: event)
-        }
     }
 
     private static let cardType = NSPasteboard.PasteboardType(UTType.copyItem.identifier)
@@ -420,24 +407,30 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         return panel
     }
 
-    /// The rail moves too far per swipe for the imported history's card density: Copy
-    /// consumes the scroll and re-posts a copy with halved deltas, marked with
-    /// `CopyPasteboard.scaledScrollUserData` so this monitor passes the re-post
-    /// through instead of scaling it again (which would loop forever).
+    /// The rail moves too far per swipe for the imported history's card density:
+    /// scrolls delivered to the shelf are consumed here and the rail's scroll view is
+    /// fed a copy with halved deltas. Routing in-process — `NSEvent(cgEvent:)` fed
+    /// straight to the scroll view, no WindowServer repost — can't loop (the repost
+    /// variant lost its marker through WindowServer and rescaled forever), and the
+    /// window behind the shelf never sees the scroll.
     private static let scrollScale: Double = 0.5
 
-    private static func scaledScroll(_ event: NSEvent) -> NSEvent? {
-        guard let cgEvent = event.cgEvent else { return event }
-        guard cgEvent.getIntegerValueField(.eventSourceUserData) != CopyPasteboard.scaledScrollUserData,
-              let copied = cgEvent.copy() else { return event }
+    /// Where the shelf's scroll wheel lands: the card rail's scroll view.
+    var scrollRoute: () -> NSScrollView? = { nil }
+
+    private func scaledRailScroll(_ event: NSEvent) -> NSEvent? {
+        guard event.window === panel,
+              let cgEvent = event.cgEvent,
+              let copied = cgEvent.copy(),
+              let rail = scrollRoute() else { return event }
         let scaled = unsafeDowncast(copied, to: CGEvent.self)
         for field: CGEventField in [.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2,
                                     .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2] {
             let value = scaled.getDoubleValueField(field)
-            if value != 0 { scaled.setDoubleValueField(field, value: value * scrollScale) }
+            if value != 0 { scaled.setDoubleValueField(field, value: value * Self.scrollScale) }
         }
-        scaled.setIntegerValueField(.eventSourceUserData, value: CopyPasteboard.scaledScrollUserData)
-        scaled.post(tap: .cgAnnotatedSessionEventTap)
+        guard let scaledEvent = NSEvent(cgEvent: scaled) else { return event }
+        rail.scrollWheel(with: scaledEvent)
         return nil
     }
 
@@ -449,7 +442,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             case .keyDown:
                 return (self.onKeyEvent?(event) ?? false) ? nil : event
             case .scrollWheel:
-                return Self.scaledScroll(event)
+                return self.scaledRailScroll(event)
             case .flagsChanged:
                 self.onFlagsChanged?(event)
                 return event

@@ -14,9 +14,4 @@ public enum CopyPasteboard {
     /// own ⌘V (`CGKeyEventPoster.postCommandV()`, `PasteStackEngine.postMarkedPasteKeystroke()`)
     /// must set this field so there is exactly one definition of "this is our keystroke."
     public static let selfEventUserData: Int64 = 0xC0_50_11
-
-    /// Marks a scroll CGEvent Copy re-posted after scaling its deltas (shelf scroll
-    /// sensitivity), so the shelf's local event monitor lets the re-post through
-    /// instead of scaling it again — which would loop forever.
-    public static let scaledScrollUserData: Int64 = 0xC0_5C_52
 }

@@ -60,7 +60,6 @@ final class AppCoordinator {
             // the host in AppKit and resolved against the tab frames the view model holds
             // (see `ShelfHostingView`).
             host.activeShelfDrag = { [weak self] in self?.shelfViewModel.activeShelfDrag }
-            host.scrollRoute = { [weak self] in self?.shelfViewModel.cardSweep.scrollView }
             host.onDragMoved = { [weak self] kind, point in
                 self?.shelfViewModel.shelfDragMoved(kind, to: point) ?? false
             }
@@ -76,6 +75,9 @@ final class AppCoordinator {
         }
         controller.onDidHide = { [weak self] in
             self?.shelfViewModel.clearTransientState()
+        }
+        controller.scrollRoute = { [weak self] in
+            self?.shelfViewModel.cardSweep.scrollView
         }
         controller.onKeyEvent = { [weak self, weak controller] event in
             guard let self, let controller else { return false }
