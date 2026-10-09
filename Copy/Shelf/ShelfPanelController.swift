@@ -413,7 +413,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// straight to the scroll view, no WindowServer repost — can't loop (the repost
     /// variant lost its marker through WindowServer and rescaled forever), and the
     /// window behind the shelf never sees the scroll.
-    private static let scrollScale: Double = 0.5
+    private static let scrollScale: Double = 0.9
 
     /// Where the shelf's scroll wheel lands: the card rail's scroll view.
     var scrollRoute: () -> NSScrollView? = { nil }
