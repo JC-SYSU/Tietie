@@ -95,4 +95,46 @@ final class PageWindowTests: XCTestCase {
         XCTAssertEqual(loaded, 1044)
         XCTAssertLessThanOrEqual(fetches, 7)
     }
+
+    // MARK: maxLimit — the fixed-size shelf
+
+    func testMaxLimitCapsTheWindow() {
+        var page = PageWindow(pageSize: 50, growth: 200, lookahead: 20, maxLimit: 50)
+        XCTAssertEqual(page.limit, 50)
+        XCTAssertFalse(page.growIfNeeded(visibleIndex: 49, loadedCount: 50),
+                       "at the cap the window can't grow — and must not re-query")
+        page.reset()
+        XCTAssertEqual(page.limit, 50)
+    }
+
+    func testMaxLimitAlsoClampsAnOversizedPageSize() {
+        var page = PageWindow(pageSize: 500, growth: 200, lookahead: 20, maxLimit: 50)
+        XCTAssertEqual(page.limit, 50)
+    }
+
+    func testGrowStopsExactlyAtMaxLimit() {
+        var page = PageWindow(pageSize: 20, growth: 200, lookahead: 5, maxLimit: 50)
+        XCTAssertTrue(page.growIfNeeded(visibleIndex: 18, loadedCount: 20))
+        XCTAssertEqual(page.limit, 50, "growth clamps to the cap, never past it")
+        XCTAssertFalse(page.growIfNeeded(visibleIndex: 19, loadedCount: 20))
+    }
+
+    func testNilMaxLimitKeepsTheUnboundedWalk() {
+        var page = PageWindow(pageSize: 50, growth: 200, lookahead: 20, maxLimit: nil)
+        XCTAssertTrue(page.growIfNeeded(visibleIndex: 49, loadedCount: 50))
+        XCTAssertEqual(page.limit, 250)
+    }
+
+    func testMaxLimitResetReturnsToTheClampedFirstPage() {
+        var page = PageWindow(pageSize: 100, growth: 200, lookahead: 20, maxLimit: 50)
+        XCTAssertEqual(page.limit, 50, "an oversized pageSize clamps too")
+        page.reset()
+        XCTAssertEqual(page.limit, 50)
+    }
+
+    func testMidRailAppearanceNeverGrowsUnderMaxLimit() {
+        var page = PageWindow(pageSize: 50, growth: 200, lookahead: 20, maxLimit: 50)
+        XCTAssertFalse(page.growIfNeeded(visibleIndex: 25, loadedCount: 50))
+        XCTAssertEqual(page.limit, 50)
+    }
 }

@@ -188,12 +188,10 @@ final class ShelfViewModel {
     @ObservationIgnored private var token: ObservationToken?
     @ObservationIgnored private var pinboardsToken: ObservationToken?
 
-    /// How many rows the active history/search query fetches. The shelf opens on one page
-    /// and widens the window as scrolling approaches the oldest card (`loadMoreIfNeeded`),
-    /// so browsing reaches the whole history instead of stopping at the first page. A fixed
-    /// window here — not the retention setting — is what used to bound how far back the
-    /// shelf could scroll.
-    @ObservationIgnored private var page = PageWindow()
+    /// How many rows the active history/search query fetches. Hard-capped at 50: the
+    /// shelf is a recents surface, and search — SQL-prefiltered, full history — is the
+    /// retrieval path. `loadMoreIfNeeded` stays wired but never grows past the cap.
+    @ObservationIgnored private var page = PageWindow(pageSize: 50, growth: 200, lookahead: 20, maxLimit: 50)
     /// Whether the active observation is a windowed one. The plain pinboard browse fetches
     /// every item on the board, so there's nothing to page there.
     @ObservationIgnored private var isPaged = true

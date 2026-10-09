@@ -17,21 +17,25 @@ public struct PageWindow: Equatable, Sendable {
     /// How many rows from the end of the loaded rows trigger the next growth, so the window
     /// widens before the user actually reaches the last one.
     public let lookahead: Int
+    /// Ceiling on `limit`, for callers that want a fixed-size shelf regardless of history
+    /// depth. `nil` keeps the walk-the-whole-history behavior.
+    public let maxLimit: Int?
 
     /// The row count the caller's query should currently fetch.
     public private(set) var limit: Int
 
-    public init(pageSize: Int = 100, growth: Int = 200, lookahead: Int = 20) {
+    public init(pageSize: Int = 100, growth: Int = 200, lookahead: Int = 20, maxLimit: Int? = nil) {
         self.pageSize = pageSize
         self.growth = growth
         self.lookahead = lookahead
-        self.limit = pageSize
+        self.maxLimit = maxLimit
+        self.limit = min(pageSize, maxLimit ?? pageSize)
     }
 
     /// Narrows back to the first page. The caller uses this when the query changes, so a new
     /// query never inherits the previous one's window.
     public mutating func reset() {
-        limit = pageSize
+        limit = min(pageSize, maxLimit ?? pageSize)
     }
 
     /// Widens the window when `visibleIndex` is within `lookahead` rows of the end of the
@@ -43,9 +47,13 @@ public struct PageWindow: Equatable, Sendable {
     /// stops re-querying. It's also the re-entrancy guard: immediately after a growth the
     /// delivered rows are still the narrower page, so the further calls that arrive while
     /// the wider fetch is in flight are ignored rather than compounding the growth.
+    /// At `maxLimit` the window can't grow, so this returns false — otherwise every card
+    /// appearance would re-run the query against an unchanged limit forever.
     public mutating func growIfNeeded(visibleIndex: Int, loadedCount: Int) -> Bool {
         guard visibleIndex >= loadedCount - lookahead, loadedCount >= limit else { return false }
-        limit += growth
+        let next = min(limit + growth, maxLimit ?? limit + growth)
+        guard next > limit else { return false }
+        limit = next
         return true
     }
 }
