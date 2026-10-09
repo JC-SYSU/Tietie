@@ -158,10 +158,11 @@ public struct ItemStore {
     /// (the `SearchClipboardIntent` AppIntent, which searches globally) keep compiling
     /// unchanged and stay unscoped.
     public func search(_ query: String, kinds: Set<ItemKind>? = nil, limit: Int = 50, pinboardID: Int64? = nil) throws -> [ClipItem] {
-        let needle = TextMatch.normalize(query)
-        guard !needle.isEmpty else { return [] }
+        let words = TextMatch.words(TextMatch.normalize(query))
+        guard !words.isEmpty else { return [] }
         var sql = "SELECT item.* FROM item WHERE 1"
         var arguments: [any DatabaseValueConvertible] = []
+        appendTextPrefilter(query, into: &sql, arguments: &arguments)
         if let kinds {
             let names = kinds.map(\.rawValue).sorted()
             sql += " AND item.kind IN (\(names.map { _ in "?" }.joined(separator: ",")))"
@@ -176,7 +177,7 @@ public struct ItemStore {
         let candidates = try writer.read { db in
             try ClipItem.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
         }
-        return Array(candidates.filter { TextMatch.matches(needle, in: $0) }.prefix(limit))
+        return Array(candidates.filter { TextMatch.matches(words, in: $0) }.prefix(limit))
     }
 
     /// Faceted search (see `SearchFilter`): substring-matches `filter.text` in Swift
@@ -189,10 +190,10 @@ public struct ItemStore {
     /// and in full; everything else is bounded.
     /// Set `favoritesFirst` to false for one bounded recency window, without changing marks.
     public func search(filter: SearchFilter, limit: Int = 100, favoritesFirst: Bool = true) throws -> [ClipItem] {
-        let needle = TextMatch.normalize(filter.text)
+        let words = TextMatch.words(TextMatch.normalize(filter.text))
         func matched(_ rows: [ClipItem], boundedToLimit: Bool) -> [ClipItem] {
-            var rows = needle.isEmpty ? rows : rows.filter { TextMatch.matches(needle, in: $0) }
-            if boundedToLimit, !needle.isEmpty { rows = Array(rows.prefix(limit)) }
+            var rows = words.isEmpty ? rows : rows.filter { TextMatch.matches(words, in: $0) }
+            if boundedToLimit, !words.isEmpty { rows = Array(rows.prefix(limit)) }
             return rows
         }
         if !favoritesFirst {
@@ -226,6 +227,9 @@ public struct ItemStore {
         let facets = facetClauses(filter)
         sql += facets.sql
         arguments.append(contentsOf: facets.arguments)
+        if filter.hasText {
+            appendTextPrefilter(filter.text, into: &sql, arguments: &arguments)
+        }
         // A literal 0/1 from a Bool, not caller text, so there's nothing to bind or escape.
         if let isFavorite { sql += " AND item.isFavorite = \(isFavorite ? 1 : 0)" }
         sql += " ORDER BY item.lastUsedAt DESC"
@@ -237,6 +241,29 @@ public struct ItemStore {
             arguments.append(limit)
         }
         return (sql, arguments)
+    }
+
+    /// AND-ed SQL LIKE prefilter for the query words, OR-ed across the searchable
+    /// fields and repeated in upper case — LIKE folds ASCII case only, so non-ASCII
+    /// letters need both spellings. %, _ and \ are escaped to stay literal. This
+    /// only shrinks the rows `TextMatch.matches` re-checks in Swift: it can
+    /// over-select, and its non-ASCII case handling is the rougher of the two.
+    private func appendTextPrefilter(_ text: String, into sql: inout String, arguments: inout [any DatabaseValueConvertible]) {
+        let fields = ["plainText", "title", "linkTitle", "appName", "recognizedText"]
+        func clause(_ pattern: String) -> String {
+            "(" + fields.map { "\($0) LIKE ? ESCAPE '\\'" }.joined(separator: " OR ") + ")"
+        }
+        for word in TextMatch.words(TextMatch.normalize(text)) {
+            let lower = TextMatch.likePattern(word)
+            let upper = TextMatch.likePattern(word.uppercased())
+            sql += " AND (" + clause(lower)
+            arguments.append(contentsOf: repeatElement(lower, count: fields.count))
+            if upper != lower {
+                sql += " OR " + clause(upper)
+                arguments.append(contentsOf: repeatElement(upper, count: fields.count))
+            }
+            sql += ")"
+        }
     }
 
     /// The AND-ed WHERE fragment (leading `" AND …"`) and bound arguments for a filter's

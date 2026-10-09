@@ -1,38 +1,56 @@
 import Foundation
 
-/// Free-text matching for search: normalized substring containment. Replaces the FTS5
-/// unicode61 path, whose tokenizer treats a continuous CJK run as one token — a Chinese
-/// substring mid-run ("机械取栓" inside "缺血性卒中机械取栓术后") could never match there.
-/// Deliberately not fuzzy: the normalized query must appear contiguously.
+/// Free-text matching for search: case-insensitive word containment. Replaces the
+/// FTS5 unicode61 path, whose tokenizer treats a continuous CJK run as one token —
+/// a Chinese substring mid-run ("机械取栓" inside "缺血性卒中机械取栓术后") could never
+/// match there. Deliberately not fuzzy: every query word must appear contiguously.
+/// A CJK run is a single word (no spaces), so Chinese keeps substring behavior.
+/// ItemStore narrows candidates with a SQL LIKE prefilter first; this type is the
+/// matching authority on whatever rows survive it.
 enum TextMatch {
-    /// Newest rows a text query scans before older history stops matching. FTS scanned
-    /// the whole index; this window is the trade for substring semantics.
+    /// Newest rows a text query scans before older history stops matching. The LIKE
+    /// prefilter usually shrinks candidates far below this; it only bounds the
+    /// pathological all-words-common case.
     static let candidateWindow = 10_000
 
-    /// Case-folds and collapses whitespace runs to single spaces. Newlines between
-    /// fields normalize to spaces too, so multi-word queries can span fields.
+    /// Case-folds and collapses whitespace runs to single spaces.
     static func normalize(_ text: String) -> String {
         text.lowercased()
             .split(omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
             .joined(separator: " ")
     }
 
-    /// Every field a query can land in — the same set the FTS table indexed
-    /// (plainText, title, linkTitle, appName, recognizedText).
-    static func haystack(for item: ClipItem) -> String {
-        normalize([item.plainText, item.title, item.linkTitle, item.appName, item.recognizedText]
-            .compactMap { $0 }
-            .joined(separator: "\n"))
+    /// Whitespace-separated words of a normalized query. AND semantics, order-free —
+    /// the semantics FTS's `matchingAllPrefixesIn` had.
+    static func words(_ normalizedQuery: String) -> [String] {
+        normalizedQuery.split(separator: " ").map(String.init)
     }
 
-    /// Every whitespace-separated word of `normalizedQuery` must land somewhere in the
-    /// item — AND semantics, order-free, each word a substring. A CJK run is a single
-    /// word (no spaces), so Chinese keeps contiguous-substring behavior. This is FTS's
-    /// `matchingAllPrefixesIn` AND with substrings instead of prefixes.
-    /// `normalizedQuery` must be `normalize(_:)`d by the caller.
-    static func matches(_ normalizedQuery: String, in item: ClipItem) -> Bool {
-        guard !normalizedQuery.isEmpty else { return false }
+    /// LIKE pattern for one word, with %, _ and \ escaped (pair with ESCAPE '\').
+    static func likePattern(_ word: String) -> String {
+        "%" + word
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "%"
+    }
+
+    /// Every field a query can land in — the same set the FTS table indexed
+    /// (plainText, title, linkTitle, appName, recognizedText). Raw, unnormalized:
+    /// normalizing every row per keystroke was the search bottleneck.
+    static func haystack(for item: ClipItem) -> String {
+        [item.plainText, item.title, item.linkTitle, item.appName, item.recognizedText]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+    }
+
+    /// `words` must be `words(of:)` output. Newlines between fields let a multi-word
+    /// query span fields — "safari invoice" matches an item copied from Safari
+    /// holding "invoice".
+    static func matches(_ words: [String], in item: ClipItem) -> Bool {
+        guard !words.isEmpty else { return false }
         let hay = haystack(for: item)
-        return normalizedQuery.split(separator: " ").allSatisfy { hay.contains($0) }
+        return words.allSatisfy {
+            hay.range(of: $0, options: .caseInsensitive, locale: nil) != nil
+        }
     }
 }

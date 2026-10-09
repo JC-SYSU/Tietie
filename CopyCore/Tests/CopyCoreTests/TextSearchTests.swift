@@ -18,6 +18,16 @@ final class TextSearchTests: XCTestCase {
         XCTAssertEqual(try store.search("机械栓").count, 0)
     }
 
+    /// LIKE metacharacters in the query must stay literal through the SQL prefilter.
+    func testLikeMetacharactersAreEscaped() throws {
+        let store = try makeTempStore()
+        _ = try store.save(makeText("50%_discount_code"))
+        XCTAssertEqual(try store.search("50%_disc").count, 1)
+        XCTAssertEqual(try store.search("discount").count, 1)
+        XCTAssertEqual(try store.search("zz%").count, 0, "% must not act as a wildcard")
+        XCTAssertEqual(try store.search("50_disc").count, 0, "_ must not act as a wildcard")
+    }
+
     func testMatchingIgnoresCaseAndCollapsesWhitespace() throws {
         let store = try makeTempStore()
         _ = try store.save(makeText("Clinical  TRIAL\tprotocol"))
