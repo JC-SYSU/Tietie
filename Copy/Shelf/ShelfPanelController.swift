@@ -420,13 +420,36 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         return panel
     }
 
+    /// The rail moves too far per swipe for the imported history's card density: Copy
+    /// consumes the scroll and re-posts a copy with halved deltas, marked with
+    /// `CopyPasteboard.scaledScrollUserData` so this monitor passes the re-post
+    /// through instead of scaling it again (which would loop forever).
+    private static let scrollScale: Double = 0.5
+
+    private static func scaledScroll(_ event: NSEvent) -> NSEvent? {
+        guard let cgEvent = event.cgEvent else { return event }
+        guard cgEvent.getIntegerValueField(.eventSourceUserData) != CopyPasteboard.scaledScrollUserData,
+              let copied = cgEvent.copy() else { return event }
+        let scaled = unsafeDowncast(copied, to: CGEvent.self)
+        for field: CGEventField in [.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2,
+                                    .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2] {
+            let value = scaled.getDoubleValueField(field)
+            if value != 0 { scaled.setDoubleValueField(field, value: value * scrollScale) }
+        }
+        scaled.setIntegerValueField(.eventSourceUserData, value: CopyPasteboard.scaledScrollUserData)
+        scaled.post(tap: .cgAnnotatedSessionEventTap)
+        return nil
+    }
+
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .pressure, .leftMouseDown]) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .pressure, .leftMouseDown, .scrollWheel]) { [weak self] event in
             guard let self, self.isVisible else { return event }
             switch event.type {
             case .keyDown:
                 return (self.onKeyEvent?(event) ?? false) ? nil : event
+            case .scrollWheel:
+                return Self.scaledScroll(event)
             case .flagsChanged:
                 self.onFlagsChanged?(event)
                 return event
