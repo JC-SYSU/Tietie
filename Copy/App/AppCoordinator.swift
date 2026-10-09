@@ -60,6 +60,7 @@ final class AppCoordinator {
             // the host in AppKit and resolved against the tab frames the view model holds
             // (see `ShelfHostingView`).
             host.activeShelfDrag = { [weak self] in self?.shelfViewModel.activeShelfDrag }
+            host.scrollRoute = { [weak self] in self?.shelfViewModel.cardSweep.scrollView }
             host.onDragMoved = { [weak self] kind, point in
                 self?.shelfViewModel.shelfDragMoved(kind, to: point) ?? false
             }
@@ -170,7 +171,7 @@ final class AppCoordinator {
                 }
                 return true
             case 36: // return
-                viewModel.pasteSelection(plain: event.modifierFlags.contains(.option))
+                viewModel.pasteSelection(plain: !event.modifierFlags.intersection([.option, .shift]).isEmpty)
                 return true
             // Both guard on an empty search field. The shelf keeps that field focused at
             // all times (see the ⌥-digit note above), so an unguarded ⌘V would take the

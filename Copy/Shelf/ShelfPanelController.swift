@@ -74,6 +74,23 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
     var onCardDrop: ((CGPoint, [String]?) -> Bool)?
     /// A pinboard tab dropped at `point` with its id (nil if unreadable); returns success.
     var onPinboardDrop: ((CGPoint, Int64?) -> Bool)?
+    /// Where a scroll wheel lands when the pointer is over a dead pixel of the SwiftUI
+    /// content: hit-test misses there let scroll events reach whatever window sits behind
+    /// the panel (a Chrome page swipe while swiping the rail). The dead point is claimed
+    /// for the panel and the scroll routed to the card rail instead.
+    var scrollRoute: () -> NSScrollView? = { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) ?? self
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if let scrollView = scrollRoute() {
+            scrollView.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
 
     private static let cardType = NSPasteboard.PasteboardType(UTType.copyItem.identifier)
     private static let pinboardType = NSPasteboard.PasteboardType(UTType.copyPinboard.identifier)
@@ -229,7 +246,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
               let screen = NSScreen.screens.first(where: {
                   NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
               }) ?? NSScreen.main else { return }
-        let frame = ShelfLayout.frame(visibleFrame: screen.visibleFrame, height: currentShelfHeight, floating: floatingShelf)
+        let frame = ShelfLayout.frame(visibleFrame: screen.frame, height: currentShelfHeight, floating: floatingShelf)
         panel.setFrame(frame, display: true)
     }
 
@@ -237,7 +254,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         floatingShelf = floating
         guard let panel, panel.isVisible, !isHiding, let screen = panel.screen else { return }
         setShelfContentOffset(0, in: panel)
-        panel.setFrame(ShelfLayout.frame(visibleFrame: screen.visibleFrame,
+        panel.setFrame(ShelfLayout.frame(visibleFrame: screen.frame,
                                         height: currentShelfHeight, floating: floating), display: true)
     }
 
@@ -253,7 +270,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
         }) ?? NSScreen.main else { return }
 
-        let frame = ShelfLayout.frame(visibleFrame: screen.visibleFrame, height: currentShelfHeight, floating: floatingShelf)
+        let frame = ShelfLayout.frame(visibleFrame: screen.frame, height: currentShelfHeight, floating: floatingShelf)
         let panel = self.panel ?? makePanel()
         self.panel = panel
 

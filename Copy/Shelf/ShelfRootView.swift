@@ -766,7 +766,7 @@ private struct KeyboardLegend: View {
         HStack(spacing: 14) {
             KeyHint(key: "↩", label: "Paste")
             KeyHint(key: "Space", label: "Preview")
-            KeyHint(key: "⌥↩", label: "Plain text")
+            KeyHint(key: "⇧↩", label: "Plain text")
             KeyHint(key: "⌘⌫", label: "Delete")
             Spacer(minLength: 8)
             IconButton(systemName: "xmark", fontSize: 9,

@@ -29,7 +29,7 @@ struct TipsSheet: View {
                     section("Open & paste", [
                         (openHotkey, "Open or hide Copy"),
                         ("↩", "Paste the selected card"),
-                        ("⌥↩", "Paste as plain text"),
+                        ("⇧↩", "Paste as plain text"),
                         ("⌥1–9", "Paste the Nth card (hold ⌥ to see numbers)"),
                         ("Space", "Preview the selected card"),
                         ("⌘O", "Open a link or file"),
