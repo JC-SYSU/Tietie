@@ -57,6 +57,10 @@ struct ShelfRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Hit-test floor for the whole panel: the glass surface below isn't scroll-
+        // routeable, so without this a scroll starting on any dead pixel (header gaps,
+        // legend strip, padding) fell through to the window behind the shelf.
+        .background(Color.black.opacity(0.001).ignoresSafeArea())
         .glassSurface(corners: viewModel.settings.floatingShelf ? .all(12) : .top(12))
         .clipShape(UnevenRoundedRectangle(
             topLeadingRadius: 12,
