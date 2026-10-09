@@ -88,6 +88,14 @@ final class AppCoordinator {
                   !viewModel.creatingItem, !viewModel.showingTips,
                   viewModel.adjustingColorItem == nil,
                   viewModel.inlineRenamingItemID == nil else { return false }
+            // IME composition (Chinese/Japanese/Korean input): while the field editor
+            // holds marked text, every key belongs to the input method — space and
+            // return commit the candidates, arrows page them. None of the shelf
+            // shortcuts below may fire, or space-selecting a candidate would toggle
+            // the preview and swallow the key instead of typing the word.
+            if let editor = event.window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+                return false
+            }
             // Type-to-search: the search field isn't auto-focused, so a letter typed while
             // browsing begins a search and moves focus into the field.
             if !viewModel.isSearchFieldFocused,
