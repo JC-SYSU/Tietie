@@ -158,13 +158,10 @@ public struct ItemStore {
     /// (the `SearchClipboardIntent` AppIntent, which searches globally) keep compiling
     /// unchanged and stay unscoped.
     public func search(_ query: String, kinds: Set<ItemKind>? = nil, limit: Int = 50, pinboardID: Int64? = nil) throws -> [ClipItem] {
-        guard let pattern = FTS5Pattern(matchingAllPrefixesIn: query) else { return [] }
-        var sql = """
-            SELECT item.* FROM item
-            JOIN item_fts ON item_fts.rowid = item.id
-            WHERE item_fts MATCH ?
-            """
-        var arguments: [any DatabaseValueConvertible] = [pattern]
+        let needle = TextMatch.normalize(query)
+        guard !needle.isEmpty else { return [] }
+        var sql = "SELECT item.* FROM item WHERE 1"
+        var arguments: [any DatabaseValueConvertible] = []
         if let kinds {
             let names = kinds.map(\.rawValue).sorted()
             sql += " AND item.kind IN (\(names.map { _ in "?" }.joined(separator: ",")))"
@@ -175,61 +172,67 @@ public struct ItemStore {
             arguments.append(pinboardID)
         }
         sql += " ORDER BY item.lastUsedAt DESC LIMIT ?"
-        arguments.append(limit)
-        return try writer.read { db in
+        arguments.append(TextMatch.candidateWindow)
+        let candidates = try writer.read { db in
             try ClipItem.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
         }
+        return Array(candidates.filter { TextMatch.matches(needle, in: $0) }.prefix(limit))
     }
 
-    /// Faceted search (see `SearchFilter`): FTS-matches `filter.text` when present, then
-    /// AND-applies the app/kind/date/favorites/pinboard facets. With no text it's a plain
-    /// `SELECT` (no FTS), so facet-only queries work without a text pattern.
+    /// Faceted search (see `SearchFilter`): substring-matches `filter.text` in Swift
+    /// (`TextMatch`) when present, then AND-applies the app/kind/date/favorites/pinboard
+    /// facets. With no text it's a plain `SELECT`, so facet-only queries work without a
+    /// matching pass. With text, SQL bounds each half to the `TextMatch.candidateWindow`
+    /// newest rows before the Swift-side match runs.
     /// Results page the same way history does, so favorites get the same exemption from
     /// `limit` for the same reason — see `fetchRecentPage`. Matching favorites come first
     /// and in full; everything else is bounded.
     /// Set `favoritesFirst` to false for one bounded recency window, without changing marks.
     public func search(filter: SearchFilter, limit: Int = 100, favoritesFirst: Bool = true) throws -> [ClipItem] {
+        let needle = TextMatch.normalize(filter.text)
+        func matched(_ rows: [ClipItem], boundedToLimit: Bool) -> [ClipItem] {
+            var rows = needle.isEmpty ? rows : rows.filter { TextMatch.matches(needle, in: $0) }
+            if boundedToLimit, !needle.isEmpty { rows = Array(rows.prefix(limit)) }
+            return rows
+        }
         if !favoritesFirst {
-            guard let query = searchQuery(filter, isFavorite: nil, limit: limit) else { return [] }
+            let query = searchQuery(filter, isFavorite: nil, limit: limit)
             return try writer.read { db in
-                try ClipItem.fetchAll(db, sql: query.sql, arguments: StatementArguments(query.arguments))
+                matched(try ClipItem.fetchAll(db, sql: query.sql,
+                                              arguments: StatementArguments(query.arguments)),
+                        boundedToLimit: true)
             }
         }
-        guard let favorites = searchQuery(filter, isFavorite: true, limit: nil),
-              let rest = searchQuery(filter, isFavorite: false, limit: limit) else { return [] }
+        let favorites = searchQuery(filter, isFavorite: true, limit: nil)
+        let rest = searchQuery(filter, isFavorite: false, limit: limit)
         return try writer.read { db in
-            try ClipItem.fetchAll(db, sql: favorites.sql,
-                                  arguments: StatementArguments(favorites.arguments))
-                + ClipItem.fetchAll(db, sql: rest.sql,
-                                    arguments: StatementArguments(rest.arguments))
+            matched(try ClipItem.fetchAll(db, sql: favorites.sql,
+                                          arguments: StatementArguments(favorites.arguments)),
+                    boundedToLimit: false)
+                + matched(try ClipItem.fetchAll(db, sql: rest.sql,
+                                                arguments: StatementArguments(rest.arguments)),
+                          boundedToLimit: true)
         }
     }
 
-    /// Builds one half of `search(filter:)`: the matching rows on one side of the favorite
-    /// split, newest first, optionally bounded. Returns nil when the free text can't compile
-    /// to an FTS pattern, which the caller treats as "no results".
+    /// Builds one half of `search(filter:)`: the candidate rows on one side of the
+    /// favorite split, newest first. Text matching happens in Swift (`TextMatch`), so
+    /// with free text the SQL side just bounds the recency window; without it, `limit`
+    /// applies directly.
     private func searchQuery(_ filter: SearchFilter, isFavorite: Bool?, limit: Int?)
-        -> (sql: String, arguments: [any DatabaseValueConvertible])? {
-        var sql: String
+        -> (sql: String, arguments: [any DatabaseValueConvertible]) {
+        var sql = "SELECT item.* FROM item WHERE 1"
         var arguments: [any DatabaseValueConvertible] = []
-        if filter.hasText {
-            guard let pattern = FTS5Pattern(matchingAllPrefixesIn: filter.text) else { return nil }
-            sql = """
-                SELECT item.* FROM item
-                JOIN item_fts ON item_fts.rowid = item.id
-                WHERE item_fts MATCH ?
-                """
-            arguments.append(pattern)
-        } else {
-            sql = "SELECT item.* FROM item WHERE 1"
-        }
         let facets = facetClauses(filter)
         sql += facets.sql
         arguments.append(contentsOf: facets.arguments)
         // A literal 0/1 from a Bool, not caller text, so there's nothing to bind or escape.
         if let isFavorite { sql += " AND item.isFavorite = \(isFavorite ? 1 : 0)" }
         sql += " ORDER BY item.lastUsedAt DESC"
-        if let limit {
+        if filter.hasText {
+            sql += " LIMIT ?"
+            arguments.append(TextMatch.candidateWindow)
+        } else if let limit {
             sql += " LIMIT ?"
             arguments.append(limit)
         }
