@@ -403,7 +403,6 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         let panel = KeyablePanel(contentRect: .zero,
                                  styleMask: [.borderless, .nonactivatingPanel],
                                  backing: .buffered, defer: false)
-        panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -411,6 +410,9 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.isFloatingPanel = true
+        // Set AFTER `isFloatingPanel`: that setter drags the level back down to
+        // .floating (3), which loses to the Dock's full-screen window (layer 20).
+        panel.level = .statusBar
         panel.delegate = self
         panel.contentView = ShelfClippingView(content: makeContent())
         panel.sharingType = hideDuringScreenSharing ? .none : .readOnly
