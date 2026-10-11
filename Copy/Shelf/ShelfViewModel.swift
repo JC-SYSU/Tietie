@@ -531,6 +531,7 @@ final class ShelfViewModel {
     /// 面板上的滚轮/双指事件全部由这里消化: 累计横向增量, 过阈或手势结束翻一页。
     /// 动量事件直接吞掉——翻页没有惯性, 这正是目的。
     func pageScroll(_ event: NSEvent) {
+        JumpProbe.log("pageScroll dx=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) momentumEmpty=\(event.momentumPhase.isEmpty)")
         let dx = event.scrollingDeltaX * Self.pageDirectionSign
         let now = Date()
         if !event.momentumPhase.isEmpty { return }

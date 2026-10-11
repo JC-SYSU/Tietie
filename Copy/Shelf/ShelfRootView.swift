@@ -542,118 +542,108 @@ private struct ShelfItemsRow: View {
     /// immediately — no separate change-hook plumbing needed on the SwiftUI side.
     private var compact: Bool { viewModel.settings.compactShelf }
 
+    /// 当前页的卡片切片 (携带全列表下标, 供收藏分隔线与 ⌥数字粘贴编号使用)。
+    private var pageItems: [(index: Int, item: ClipItem)] {
+        let capacity = max(1, viewModel.pageCapacity)
+        guard !viewModel.items.isEmpty else { return [] }
+        let start = min(viewModel.pageIndex * capacity, viewModel.items.count - 1)
+        let end = min(start + capacity, viewModel.items.count)
+        return viewModel.items[start..<end].enumerated().map { (index: start + $0.offset, item: $0.element) }
+    }
+
+    /// 翻页容器: 无滚动视图, 每页固定渲染 `pageCapacity` 张卡, 翻页由状态机切片驱动。
+    private var pageContent: some View {
+        HStack(spacing: Tokens.cardGap(compact: compact)) {
+            ForEach(pageItems, id: \.item.uuid) { pair in
+                // A divider between the leading favorites and the rest.
+                if pair.index == viewModel.favoritesCount,
+                   viewModel.favoritesCount > 0,
+                   viewModel.favoritesCount < viewModel.items.count {
+                    FavoritesDivider(compact: compact)
+                }
+                ItemCardView(
+                    item: pair.item,
+                    isSelected: viewModel.isSelected(pair.item),
+                    isInlineRenaming: viewModel.inlineRenamingItemID == pair.item.id,
+                    store: viewModel.store,
+                    pinboards: viewModel.pinboards,
+                    currentPinboardID: currentPinboardID,
+                    favoritesEnabled: viewModel.settings.favoritesEnabled,
+                    compact: compact,
+                    searchQuery: viewModel.searchQuery.text,
+                    isFlashing: viewModel.flashItemID == pair.item.uuid,
+                    pasteNumber: (viewModel.optionHeld && pair.index < 9) ? pair.index + 1 : nil,
+                    canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
+                    onClick: { modifiers in viewModel.handleCardClick(pair.item, modifiers: modifiers) },
+                    onHoverChanged: { hovering in
+                        if hovering {
+                            viewModel.hoveredItemID = pair.item.uuid
+                        } else if viewModel.hoveredItemID == pair.item.uuid {
+                            viewModel.hoveredItemID = nil
+                        }
+                    },
+                    onPaste: { viewModel.requestPaste(pair.item, plain: false) },
+                    onPastePlain: { viewModel.requestPaste(pair.item, plain: true) },
+                    onEdit: { viewModel.beginEdit(pair.item) },
+                    onAdjustColor: { viewModel.beginAdjustColor(pair.item) },
+                    onBeginInlineRename: { viewModel.beginInlineRename(pair.item) },
+                    onCommitInlineRename: { viewModel.commitInlineRename(pair.item, to: $0) },
+                    onCancelInlineRename: { viewModel.cancelInlineRename() },
+                    onToggleFavorite: { viewModel.toggleFavorite(pair.item) },
+                    onAddToPinboard: { id in viewModel.addItem(pair.item, toPinboard: id) },
+                    onRemoveFromPinboard: {
+                        if let currentPinboardID {
+                            viewModel.removeItem(pair.item, fromPinboard: currentPinboardID)
+                        }
+                    },
+                    onAddToPasteStack: { viewModel.addToPasteStack(pair.item) },
+                    onCopyText: { viewModel.copyText(pair.item) },
+                    onQuickLook: { viewModel.quickLook(pair.item) },
+                    onOpen: { viewModel.open(pair.item) },
+                    onShowInHistory: { viewModel.showInHistory(pair.item) },
+                    onRotate: { viewModel.rotateImage(pair.item, clockwise: $0) },
+                    onDelete: { viewModel.delete(pair.item) },
+                    dragProvider: { viewModel.dragProvider(for: pair.item) },
+                    dragBadgeCount: viewModel.isSelected(pair.item) ? viewModel.selection.selected.count : 1
+                )
+                .id(pair.item.uuid)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: CardFramesKey.self,
+                            value: [pair.item.uuid: geo.frame(in: .named(CardSweep.contentSpace))]
+                        )
+                    }
+                )
+                .onAppear {
+                    viewModel.fetchLinkPreviewIfNeeded(for: pair.item)
+                }
+                .popover(isPresented: Binding(
+                    get: { viewModel.isSelected(pair.item) && pair.item.uuid == viewModel.selection.primary && viewModel.previewShown },
+                    set: { viewModel.previewShown = $0 }
+                )) {
+                    PreviewPane(item: pair.item, store: viewModel.store)
+                }
+            }
+        }
+        .padding(.horizontal, Tokens.shelfPadding(compact: compact))
+        .padding(.vertical, compact ? 10 : 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // Dead-pixel hit-test floor: 让面板任意位置的滚轮/点击都被本层认领。
+        .background(Color.black.opacity(0.001))
+        .coordinateSpace(name: CardSweep.contentSpace)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("shelfRoot")) } action: {
+            viewModel.cardSweep.viewportFrame = $0
+            viewModel.updatePageCapacity(for: $0.width)
+        }
+        .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
+    }
+
     var body: some View {
         if viewModel.items.isEmpty {
             ShelfEmptyState(viewModel: viewModel)
         } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: Tokens.cardGap(compact: compact)) {
-                        ForEach(Array(viewModel.items.enumerated()), id: \.element.uuid) { index, item in
-                            // A divider between the leading favorites and the rest.
-                            if index == viewModel.favoritesCount,
-                               viewModel.favoritesCount > 0,
-                               viewModel.favoritesCount < viewModel.items.count {
-                                FavoritesDivider(compact: compact)
-                            }
-                            ItemCardView(
-                                item: item,
-                                isSelected: viewModel.isSelected(item),
-                                isInlineRenaming: viewModel.inlineRenamingItemID == item.id,
-                                store: viewModel.store,
-                                pinboards: viewModel.pinboards,
-                                currentPinboardID: currentPinboardID,
-                                favoritesEnabled: viewModel.settings.favoritesEnabled,
-                                compact: compact,
-                                searchQuery: viewModel.searchQuery.text,
-                                isFlashing: viewModel.flashItemID == item.uuid,
-                                pasteNumber: (viewModel.optionHeld && index < 9) ? index + 1 : nil,
-                                canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
-                                onClick: { modifiers in viewModel.handleCardClick(item, modifiers: modifiers) },
-                                onHoverChanged: { hovering in
-                                    if hovering {
-                                        viewModel.hoveredItemID = item.uuid
-                                    } else if viewModel.hoveredItemID == item.uuid {
-                                        viewModel.hoveredItemID = nil
-                                    }
-                                },
-                                onPaste: { viewModel.requestPaste(item, plain: false) },
-                                onPastePlain: { viewModel.requestPaste(item, plain: true) },
-                                onEdit: { viewModel.beginEdit(item) },
-                                onAdjustColor: { viewModel.beginAdjustColor(item) },
-                                onBeginInlineRename: { viewModel.beginInlineRename(item) },
-                                onCommitInlineRename: { viewModel.commitInlineRename(item, to: $0) },
-                                onCancelInlineRename: { viewModel.cancelInlineRename() },
-                                onToggleFavorite: { viewModel.toggleFavorite(item) },
-                                onAddToPinboard: { id in viewModel.addItem(item, toPinboard: id) },
-                                onRemoveFromPinboard: {
-                                    if let currentPinboardID {
-                                        viewModel.removeItem(item, fromPinboard: currentPinboardID)
-                                    }
-                                },
-                                onAddToPasteStack: { viewModel.addToPasteStack(item) },
-                                onCopyText: { viewModel.copyText(item) },
-                                onQuickLook: { viewModel.quickLook(item) },
-                                onOpen: { viewModel.open(item) },
-                                onShowInHistory: { viewModel.showInHistory(item) },
-                                onRotate: { viewModel.rotateImage(item, clockwise: $0) },
-                                onDelete: { viewModel.delete(item) },
-                                dragProvider: { viewModel.dragProvider(for: item) },
-                                dragBadgeCount: viewModel.isSelected(item) ? viewModel.selection.selected.count : 1
-                            )
-                            .id(item.uuid)
-                            // Publish the card's frame so a drag-select can tell which
-                            // cards its rectangle touches (see `CardSweep`).
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: CardFramesKey.self,
-                                        value: [item.uuid: geo.frame(in: .named(CardSweep.contentSpace))]
-                                    )
-                                }
-                            )
-                            // The LazyHStack only builds a card once it scrolls into view,
-                            // so this fires as the user nears the oldest card and widens the
-                            // fetch window. Without it the shelf stopped at the first page.
-                            .onAppear {
-                                viewModel.loadMoreIfNeeded(at: index)
-                                viewModel.fetchLinkPreviewIfNeeded(for: item)
-                            }
-                            .onChange(of: viewModel.settings.fetchLinkPreviews) { _, enabled in
-                                if enabled { viewModel.fetchLinkPreviewIfNeeded(for: item) }
-                            }
-                            .popover(isPresented: Binding(
-                                get: { viewModel.isSelected(item) && item.uuid == viewModel.selection.primary && viewModel.previewShown },
-                                set: { viewModel.previewShown = $0 }
-                            )) {
-                                PreviewPane(item: item, store: viewModel.store)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, Tokens.shelfPadding(compact: compact))
-                    .padding(.vertical, compact ? 10 : 16)
-                    // Give the whole row (including the gaps between cards) a real backing
-                    // view so a scroll wheel over a gap routes to the scroll view instead
-                    // of passing through to the panel behind. A near-zero-opacity fill is
-                    // enough to create the hit-testable NSView; `contentShape` alone (which
-                    // affects gesture hit-testing, not AppKit scroll-wheel routing) wasn't.
-                    .background(Color.black.opacity(0.001))
-                    // Gives the drag-select the row's scroll view, which it scrolls while
-                    // the pointer is held at an edge.
-                    .background(CardRowScrollViewFinder { viewModel.cardSweep.scrollView = $0 })
-                    .coordinateSpace(name: CardSweep.contentSpace)
-                    .onGeometryChange(for: CGPoint.self) {
-                        $0.frame(in: .named(CardSweep.viewportSpace)).origin
-                    } action: {
-                        viewModel.cardRowContentMoved(to: $0)
-                    }
-                }
-                .coordinateSpace(name: CardSweep.viewportSpace)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("shelfRoot")) } action: {
-                    viewModel.cardSweep.viewportFrame = $0
-                    viewModel.updatePageCapacity(for: $0.width)
-                }
-                .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
-                .scrollPosition(id: $viewModel.scrollPositionID)
+            pageContent
         }
     }
 }

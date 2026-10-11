@@ -78,6 +78,18 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
         super.hitTest(point) ?? self
     }
 
+    // MARK: 触控板翻页 spike——验证 swipe-tracking 接口在本面板的激活与数据形状
+
+    override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
+        JumpProbe.log("responder wantsSwipeTracking axis=\(axis == .horizontal ? "H" : "V")")
+        return axis == .horizontal
+    }
+
+    override func swipe(with event: NSEvent) {
+        JumpProbe.log("responder swipeWithEvent dx=\(event.deltaX) dy=\(event.deltaY)")
+        super.swipe(with: event)
+    }
+
     private static let cardType = NSPasteboard.PasteboardType(UTType.copyItem.identifier)
     private static let pinboardType = NSPasteboard.PasteboardType(UTType.copyPinboard.identifier)
 
@@ -421,6 +433,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
                 return (self.onKeyEvent?(event) ?? false) ? nil : event
             case .scrollWheel:
                 // 面板可见时滚动全部由翻页逻辑消化: 不透传、不进系统滚动。
+                JumpProbe.log("monitor wheel target=\(event.window === self.panel ? "panel" : "other") phase=\(event.phase.rawValue) visible=\(self.isVisible)")
                 guard event.window === self.panel else { return event }
                 self.onScroll?(event)
                 return nil
