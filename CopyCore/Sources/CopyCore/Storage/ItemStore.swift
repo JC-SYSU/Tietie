@@ -184,29 +184,43 @@ public struct ItemStore {
     /// Set `favoritesFirst` to false for one bounded recency window, without changing marks.
     public func search(filter: SearchFilter, limit: Int = 100, favoritesFirst: Bool = true) throws -> [ClipItem] {
         let words = TextMatch.words(TextMatch.normalize(filter.text))
-        func matched(_ rows: [ClipItem], boundedToLimit: Bool) -> [ClipItem] {
-            var rows = words.isEmpty ? rows : rows.filter { TextMatch.matches(words, in: $0) }
-            if boundedToLimit, !words.isEmpty { rows = Array(rows.prefix(limit)) }
-            return rows
-        }
+        // The Swift match can't run in SQL, so a text query's bound has to happen while
+        // reading: stream the rows and stop once `limit` matches are in hand, rather than
+        // materializing and matching every prefiltered row. Without text there's no match
+        // to run, and SQL's own LIMIT already bounds the fetch.
+        let matchLimit = words.isEmpty ? nil : limit
         if !favoritesFirst {
             let query = searchQuery(filter, words: words, isFavorite: nil, limit: limit)
             return try writer.read { db in
-                matched(try ClipItem.fetchAll(db, sql: query.sql,
-                                              arguments: StatementArguments(query.arguments)),
-                        boundedToLimit: true)
+                try collectMatches(db, query, words: words, limit: matchLimit)
             }
         }
         let favorites = searchQuery(filter, words: words, isFavorite: true, limit: nil)
         let rest = searchQuery(filter, words: words, isFavorite: false, limit: limit)
         return try writer.read { db in
-            matched(try ClipItem.fetchAll(db, sql: favorites.sql,
-                                          arguments: StatementArguments(favorites.arguments)),
-                    boundedToLimit: false)
-                + matched(try ClipItem.fetchAll(db, sql: rest.sql,
-                                                arguments: StatementArguments(rest.arguments)),
-                          boundedToLimit: true)
+            // Favorites come first and in full (exempt from `limit`, as the shelf places
+            // them); only the non-favorite rest is bounded.
+            try collectMatches(db, favorites, words: words, limit: nil)
+                + collectMatches(db, rest, words: words, limit: matchLimit)
         }
+    }
+
+    /// Streams a built query's rows, keeps the ones `TextMatch` accepts, and stops as
+    /// soon as `limit` matches are collected (`nil` = no bound). Reading stops early, so
+    /// a broad query costs the rows it actually needs, not every prefiltered row — the
+    /// difference between a snappy keystroke and matching all of a large candidate set.
+    private func collectMatches(_ db: Database,
+                                _ query: (sql: String, arguments: [any DatabaseValueConvertible]),
+                                words: [String],
+                                limit: Int?) throws -> [ClipItem] {
+        let cursor = try ClipItem.fetchCursor(db, sql: query.sql, arguments: StatementArguments(query.arguments))
+        var results: [ClipItem] = []
+        while let item = try cursor.next() {
+            guard words.isEmpty || TextMatch.matches(words, in: item) else { continue }
+            results.append(item)
+            if let limit, results.count >= limit { break }
+        }
+        return results
     }
 
     /// Builds one half of `search(filter:)`: the candidate rows on one side of the
