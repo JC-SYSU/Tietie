@@ -84,7 +84,7 @@ private struct GlassSurfaceModifier: ViewModifier {
     /// 内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
     private static let innerShadow = Color.black.opacity(0.15)
     /// 外阴影: 面板投向上方的投影(面板在屏幕底部), 勾勒边界。
-    private static let outerShadow = Color.black.opacity(0.25)
+    private static let outerShadow = Color.black.opacity(0.5)
 
     func body(content: Content) -> some View {
         Group {
@@ -110,7 +110,7 @@ private struct GlassSurfaceModifier: ViewModifier {
         .background {
             glassShape
                 .fill(Self.outerShadow)
-                .blur(radius: 12)
+                .blur(radius: 20)
                 .offset(y: -4)
                 .allowsHitTesting(false)
         }
