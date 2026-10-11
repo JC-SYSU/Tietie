@@ -79,11 +79,15 @@ final class ShelfViewModel {
     }
     var pinboards: [Pinboard] = []
     var selection = ShelfSelection()
-    /// 翻页滚动状态: 页码、每页卡片数、滚动视图的锚定卡片 (scrollPosition 绑定)。
+    /// 翻页状态: 当前页码、每页卡片数、最近一次翻页方向 (±1, 驱动滑动动画方向)。
     private(set) var pageIndex = 0
-    var scrollPositionID: String?
     private(set) var pageCapacity = 6
+    private(set) var lastFlipDirection = 0
     @ObservationIgnored private var pageAccumulator: CGFloat = 0
+    /// 最近一次量到的轨道视口宽度, 供分页容量重算。
+    @ObservationIgnored private var viewportWidth: CGFloat = 0
+    /// 本次手势内纵向分量的累计幅值: 超过横向累计即否决翻页 (纵向扫动不响应)。
+    @ObservationIgnored private var verticalDrift: CGFloat = 0
     @ObservationIgnored private var pageFlipCooldownUntil = Date.distantPast
     /// The drag-select in the card row: its rectangle and which cards it touches. The
     /// selection it produces is applied in `updateCardSweep`.
@@ -401,13 +405,7 @@ final class ShelfViewModel {
     func prepareForShow() {
         pageIndex = 0
         cardSweep.scrollToStart()
-        if let first = items.first {
-            selection.click(first.uuid)
-            scrollPositionID = first.uuid
-        } else {
-            selection.reset()
-            scrollPositionID = nil
-        }
+        if let first = items.first { selection.click(first.uuid) } else { selection.reset() }
     }
 
     func clearTransientState() {
@@ -516,7 +514,6 @@ final class ShelfViewModel {
               let index = items.firstIndex(where: { $0.uuid == primary }) else { return }
         let capacity = max(1, pageCapacity)
         pageIndex = index / capacity
-        scrollPositionID = items[index].uuid
     }
 
     // MARK: 翻页滚动
@@ -526,26 +523,35 @@ final class ShelfViewModel {
     /// 翻页后的静默期: 手势的剩余/动量事件在此期间被忽略, 防止一滑连翻。
     private static let pageFlipCooldown: TimeInterval = 0.35
     /// 触控板方向翻转 (若实测方向相反, 改 -1)。
-    private static let pageDirectionSign: CGFloat = 1
+    private static let pageDirectionSign: CGFloat = -1
 
     /// 面板上的滚轮/双指事件全部由这里消化: 累计横向增量, 过阈或手势结束翻一页。
     /// 动量事件直接吞掉——翻页没有惯性, 这正是目的。
     func pageScroll(_ event: NSEvent) {
-        JumpProbe.log("pageScroll dx=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) momentumEmpty=\(event.momentumPhase.isEmpty)")
         let dx = event.scrollingDeltaX * Self.pageDirectionSign
+        let dy = event.scrollingDeltaY
         let now = Date()
         if !event.momentumPhase.isEmpty { return }
         if event.phase == .ended {
-            defer { pageAccumulator = 0 }
-            if now >= pageFlipCooldownUntil { flipPage(direction: pageAccumulator >= 0 ? 1 : -1) }
+            defer { pageAccumulator = 0; verticalDrift = 0 }
+            // 意图判定: 纵向累计占优的手势不翻页。
+            if abs(pageAccumulator) > verticalDrift, now >= pageFlipCooldownUntil {
+                flipPage(direction: pageAccumulator >= 0 ? 1 : -1)
+            }
             return
         }
-        if event.phase == .cancelled { pageAccumulator = 0; return }
+        if event.phase == .cancelled { pageAccumulator = 0; verticalDrift = 0; return }
         if now < pageFlipCooldownUntil { return }
-        pageAccumulator += dx
-        if abs(pageAccumulator) >= Self.pageFlipThreshold {
+        // 横向占优的事件才累计翻页; 纵向占优的分量计入否决账。
+        if abs(dx) >= abs(dy) {
+            pageAccumulator += dx
+        } else {
+            verticalDrift += abs(dy)
+        }
+        if abs(pageAccumulator) >= Self.pageFlipThreshold, abs(pageAccumulator) > verticalDrift {
             flipPage(direction: pageAccumulator > 0 ? 1 : -1)
             pageAccumulator = 0
+            verticalDrift = 0
             pageFlipCooldownUntil = now.addingTimeInterval(Self.pageFlipCooldown)
         }
     }
@@ -554,18 +560,39 @@ final class ShelfViewModel {
         let capacity = max(1, pageCapacity)
         let maxPage = max(0, (items.count + capacity - 1) / capacity - 1)
         guard direction != 0, maxPage > 0 else { return }
-        pageIndex = min(max(pageIndex + direction, 0), maxPage)
+        lastFlipDirection = direction
+        withAnimation(.easeOut(duration: 0.25)) {
+            pageIndex = min(max(pageIndex + direction, 0), maxPage)
+        }
         let index = min(pageIndex * capacity, max(0, items.count - 1))
         guard items.indices.contains(index) else { return }
         let target = items[index]
         Haptics.tap()
         selection.click(target.uuid)
-        withAnimation(.easeOut(duration: 0.2)) { scrollPositionID = target.uuid }
     }
 
     /// 轨道视口宽度变化时重算每页卡片数。
+    /// 每页卡片数按面板宽度自适应: 用真实卡片宽度/间距/内边距换算 (紧凑档位各不同),
+    /// 收藏分隔线的占位也扣掉。视口宽度存下来, 数据或档位变化时可直接重算。
     func updatePageCapacity(for viewportWidth: CGFloat) {
-        pageCapacity = max(1, Int(viewportWidth / 240))
+        self.viewportWidth = viewportWidth
+        refreshPageCapacity()
+    }
+
+    func refreshPageCapacity() {
+        guard viewportWidth > 0 else { return }
+        let compact = settings.compactShelf
+        let card = Tokens.cardWidth(compact: compact)
+        let gap = Tokens.cardGap(compact: compact)
+        let pad = Tokens.shelfPadding(compact: compact)
+        // 收藏分隔线是一条额外元素 (宽约 5.5 含内边距), 比普通卡片间隙多占一个 gap。
+        let dividerReserve: CGFloat = (favoritesCount > 0 && favoritesCount < items.count) ? (5.5 + gap) : 0
+        let available = viewportWidth - 2 * pad - dividerReserve
+        let count = max(1, Int((available + gap) / (card + gap)))
+        if count != pageCapacity { pageCapacity = count }
+        // 容量变化后页码可能越界, clamp 回最后一页。
+        let maxPage = max(0, (items.count + count - 1) / count - 1)
+        if pageIndex > maxPage { pageIndex = maxPage }
     }
 
     func requestPaste(_ item: ClipItem, plain: Bool) {
@@ -1186,6 +1213,7 @@ final class ShelfViewModel {
         let rest = new.filter { !$0.isFavorite }
         items = settings.favoritesEnabled ? favorites + rest : new
         favoritesCount = settings.favoritesEnabled ? favorites.count : 0
+        refreshPageCapacity()
         let order = items.map(\.uuid)
         let primaryBefore = selection.primary
         selection.prune(existing: Set(order), order: order)

@@ -60,6 +60,9 @@ final class AppCoordinator {
             // the host in AppKit and resolved against the tab frames the view model holds
             // (see `ShelfHostingView`).
             host.activeShelfDrag = { [weak self] in self?.shelfViewModel.activeShelfDrag }
+            host.onPageScroll = { [weak self] event in
+                self?.shelfViewModel.pageScroll(event)
+            }
             host.onDragMoved = { [weak self] kind, point in
                 self?.shelfViewModel.shelfDragMoved(kind, to: point) ?? false
             }

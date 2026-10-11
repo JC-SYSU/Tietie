@@ -636,7 +636,20 @@ private struct ShelfItemsRow: View {
             viewModel.cardSweep.viewportFrame = $0
             viewModel.updatePageCapacity(for: $0.width)
         }
+        .onChange(of: viewModel.settings.compactShelf) { _, _ in
+            viewModel.refreshPageCapacity()
+        }
         .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
+        // 整页替换的滑动过渡: 方向跟随最近一次翻页。
+        .id(viewModel.pageIndex)
+        .transition(.asymmetric(
+            insertion: viewModel.lastFlipDirection >= 0
+                ? .move(edge: .trailing).combined(with: .opacity)
+                : .move(edge: .leading).combined(with: .opacity),
+            removal: viewModel.lastFlipDirection >= 0
+                ? .move(edge: .leading).combined(with: .opacity)
+                : .move(edge: .trailing).combined(with: .opacity)
+        ))
     }
 
     var body: some View {

@@ -64,6 +64,15 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
     /// The drag started in the shelf, if one is in progress. Used when the drag pasteboard
     /// doesn't list the card or pinboard type by name (it can be promised lazily).
     var activeShelfDrag: () -> ShelfDrag? = { nil }
+    /// 面板内的滚轮/双指事件由此认领并交给翻页逻辑; 不调 super——本层之下没有任何系统滚动可做。
+    var onPageScroll: ((NSEvent) -> Void)? = nil
+
+    override func scrollWheel(with event: NSEvent) {
+        JumpProbe.log(String(format: "host wheel dx=%.1f dy=%.1f phase=%d mom=%d",
+                             event.scrollingDeltaX, event.scrollingDeltaY,
+                             event.phase.rawValue, event.momentumPhase.rawValue))
+        onPageScroll?(event)
+    }
     /// The pointer moved to `point`; returns whether a pinboard tab is under it.
     var onDragMoved: ((ShelfDrag.Kind, CGPoint) -> Bool)?
     /// The drag left the shelf; it may come back.
