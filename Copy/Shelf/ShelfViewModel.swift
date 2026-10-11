@@ -447,6 +447,10 @@ final class ShelfViewModel {
     /// behavior) or just selects, leaving the paste to `handleCardDoubleClick`/⏎ — see
     /// that setting's doc comment in `SettingsStore`.
     func handleCardClick(_ item: ClipItem, modifiers: NSEvent.ModifierFlags) {
+        // Selecting a card leaves the search field: focus returns to the shelf so the
+        // card shortcuts (Space preview, ⏎ paste) work with the results still up. The
+        // query itself is untouched — results stay visible, only focus moves.
+        if isSearchFieldFocused { endSearchEditingRequested = true }
         if modifiers.contains(.shift) {
             selection.shiftClick(item.uuid, in: items.map(\.uuid))
         } else if modifiers.contains(.command) {

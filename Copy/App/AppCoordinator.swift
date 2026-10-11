@@ -131,6 +131,13 @@ final class AppCoordinator {
                 viewModel.removeLastToken()
                 return true
             }
+            // ⌘F focuses the search field (caret at the end), so search is reachable
+            // without typing a letter first.
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "f" {
+                viewModel.focusSearchRequested = true
+                return true
+            }
             // ⌘1 → history tab, ⌘2...⌘9 → nth pinboard. Checked before keyCode routing
             // so the digit keys never fall through to other handlers.
             if event.modifierFlags.contains(.command),
@@ -245,7 +252,12 @@ final class AppCoordinator {
                     viewModel.showInHistory(item)
                 }
                 return true
-            case 49 where viewModel.searchQuery.text.isEmpty: // space previews in browse mode
+            // Space previews when the search field is NOT focused — browse mode, or a
+            // search whose results the user stepped into (clicking a card leaves the
+            // field). While the field holds focus, space belongs to it: a literal
+            // space, or the IME's candidate commit (the marked-text guard above lets
+            // that key pass before this routing runs).
+            case 49 where !viewModel.isSearchFieldFocused:
                 viewModel.previewShown.toggle()
                 return true
             case 18 where allowsDigitQuickPaste: // 1

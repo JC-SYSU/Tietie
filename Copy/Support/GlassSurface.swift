@@ -87,7 +87,8 @@ private struct GlassSurfaceModifier: ViewModifier {
     /// secondary labels (tabs, badges, timestamps). Light glass is left as is: it is
     /// already a light surface under dark text.
     private var isDark: Bool { colorScheme == .dark }
-    private static let darkScrim = Color.black.opacity(0.32)
+    /// 深色外观下压暗玻璃用的黑罩。数值是不透明度 0–1, 越高越覆盖背景。
+    private static let darkScrim = Color.black.opacity(0.5)
 
     func body(content: Content) -> some View {
         if #available(macOS 26, *), !reduceTransparency.isReduced {
