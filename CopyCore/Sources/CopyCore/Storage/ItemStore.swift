@@ -157,10 +157,14 @@ public struct ItemStore {
     /// `kinds`) so existing positional call sites like `search(query, limit: 10)`
     /// (the `SearchClipboardIntent` AppIntent, which searches globally) keep compiling
     /// unchanged and stay unscoped.
-    /// Convenience over `search(filter:)` for a plain text query — the Shortcuts
-    /// intent's entry point. `kinds`/`pinboardID` map onto the filter's facets, so the
-    /// SQL building and Swift matching live in one place. An empty query matches
-    /// nothing (rather than everything), which the filter call can't express.
+    /// Thin adapter over `search(filter:)` for a plain text query — the Shortcuts
+    /// intent's entry point. It carries no logic of its own: `kinds`/`pinboardID` map
+    /// onto the filter's facets, so SQL building and Swift text matching live only in
+    /// `search(filter:)`/`searchQuery`. Kept as its own signature rather than folded
+    /// into `search(filter:)` because the engine tests drive `kinds` and `pinboardID`
+    /// through it; deleting it would churn those call sites for no gain. Put new
+    /// search behavior in `search(filter:)`, never here. An empty query matches
+    /// nothing (rather than everything) — a guard the filter call can't express.
     public func search(_ query: String, kinds: Set<ItemKind>? = nil, limit: Int = 50, pinboardID: Int64? = nil) throws -> [ClipItem] {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
         var filter = SearchFilter(text: query)
