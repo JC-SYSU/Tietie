@@ -74,7 +74,6 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
     var onCardDrop: ((CGPoint, [String]?) -> Bool)?
     /// A pinboard tab dropped at `point` with its id (nil if unreadable); returns success.
     var onPinboardDrop: ((CGPoint, Int64?) -> Bool)?
-
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) ?? self
     }
@@ -174,6 +173,9 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     var onClickOutsideTextField: (() -> Void)?
     private var lastPressureStage = 0
     var onDidHide: (() -> Void)?
+    /// Fired at the start of every `show()`, before the panel animates in: the shelf
+    /// resets to the newest card instead of reopening at the previous scroll position.
+    var onShow: (() -> Void)? = nil
 
     private let makeContent: () -> NSView
     private var panel: KeyablePanel?
@@ -271,6 +273,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         // re-opening the shelf, landing in whatever app is frontmost seconds later.
         // Re-summoning the shelf is them changing their mind, so drop it.
         pendingHideCompletions.removeAll()
+        onShow?()
 
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         setShelfContentOffset(0, in: panel)
@@ -407,42 +410,13 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         return panel
     }
 
-    /// The rail moves too far per swipe for the imported history's card density:
-    /// scrolls delivered to the shelf are consumed here and the rail's scroll view is
-    /// fed a copy with halved deltas. Routing in-process — `NSEvent(cgEvent:)` fed
-    /// straight to the scroll view, no WindowServer repost — can't loop (the repost
-    /// variant lost its marker through WindowServer and rescaled forever), and the
-    /// window behind the shelf never sees the scroll.
-    private static let scrollScale: Double = 0.9
-
-    /// Where the shelf's scroll wheel lands: the card rail's scroll view.
-    var scrollRoute: () -> NSScrollView? = { nil }
-
-    private func scaledRailScroll(_ event: NSEvent) -> NSEvent? {
-        guard event.window === panel,
-              let cgEvent = event.cgEvent,
-              let copied = cgEvent.copy(),
-              let rail = scrollRoute() else { return event }
-        let scaled = unsafeDowncast(copied, to: CGEvent.self)
-        for field: CGEventField in [.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2,
-                                    .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2] {
-            let value = scaled.getDoubleValueField(field)
-            if value != 0 { scaled.setDoubleValueField(field, value: value * Self.scrollScale) }
-        }
-        guard let scaledEvent = NSEvent(cgEvent: scaled) else { return event }
-        rail.scrollWheel(with: scaledEvent)
-        return nil
-    }
-
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .pressure, .leftMouseDown, .scrollWheel]) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .pressure, .leftMouseDown]) { [weak self] event in
             guard let self, self.isVisible else { return event }
             switch event.type {
             case .keyDown:
                 return (self.onKeyEvent?(event) ?? false) ? nil : event
-            case .scrollWheel:
-                return self.scaledRailScroll(event)
             case .flagsChanged:
                 self.onFlagsChanged?(event)
                 return event

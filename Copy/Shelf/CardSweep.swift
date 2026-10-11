@@ -145,6 +145,14 @@ final class CardSweep {
         clip.setBoundsOrigin(NSPoint(x: x, y: clip.bounds.origin.y))
         scrollView.reflectScrolledClipView(clip)
     }
+
+    /// Unanimated return to the leading edge — the newest card (panel show reset).
+    func scrollToStart() {
+        guard let scrollView, let document = scrollView.documentView else { return }
+        let clip = scrollView.contentView
+        clip.setBoundsOrigin(NSPoint(x: 0, y: clip.bounds.origin.y))
+        scrollView.reflectScrolledClipView(clip)
+    }
 }
 
 /// The drag-select rectangle, drawn over the whole shelf.

@@ -390,6 +390,15 @@ final class ShelfViewModel {
     /// item rather than clearing it, since `show()` doesn't re-run `apply(_:)` on
     /// reopen — leaving the selection empty here would otherwise leave ⏎/Space dead
     /// until the user first pressed an arrow key.
+    /// Show-time reset: the rail returns to the newest card and the selection lands on
+    /// it, instead of reopening at the previous scroll position.
+    func prepareForShow() {
+        cardSweep.scrollToStart()
+        if selection.primary != items.first?.uuid {
+            if let first = items.first { selection.click(first.uuid) } else { selection.reset() }
+        }
+    }
+
     func clearTransientState() {
         previewShown = false
         if let first = items.first { selection.click(first.uuid) } else { selection.reset() }

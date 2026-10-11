@@ -76,8 +76,8 @@ final class AppCoordinator {
         controller.onDidHide = { [weak self] in
             self?.shelfViewModel.clearTransientState()
         }
-        controller.scrollRoute = { [weak self] in
-            self?.shelfViewModel.cardSweep.scrollView
+        controller.onShow = { [weak self] in
+            self?.shelfViewModel.prepareForShow()
         }
         controller.onKeyEvent = { [weak self, weak controller] event in
             guard let self, let controller else { return false }
