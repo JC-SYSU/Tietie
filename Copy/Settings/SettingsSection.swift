@@ -14,11 +14,11 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .shortcuts: return "Shortcuts"
-        case .history: return "History"
-        case .privacy: return "Privacy"
-        case .about: return "About"
+        case .general: return String(localized: "General")
+        case .shortcuts: return String(localized: "Shortcuts")
+        case .history: return String(localized: "History")
+        case .privacy: return String(localized: "Privacy")
+        case .about: return String(localized: "About")
         }
     }
 
@@ -47,11 +47,11 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     /// One-line description shown under the title in the pane hero.
     var subtitle: String {
         switch self {
-        case .general: return "Appearance, behavior, and startup."
-        case .shortcuts: return "Set the keys that summon Copy and paste for you."
-        case .history: return "How long items are kept and what Copy enriches."
-        case .privacy: return "Keep sensitive apps and shared screens out of history."
-        case .about: return "Version, updates, and project links."
+        case .general: return String(localized: "Appearance, behavior, and startup.")
+        case .shortcuts: return String(localized: "Set the keys that summon Copy and paste for you.")
+        case .history: return String(localized: "How long items are kept and what Copy enriches.")
+        case .privacy: return String(localized: "Keep sensitive apps and shared screens out of history.")
+        case .about: return String(localized: "Version, updates, and project links.")
         }
     }
 }

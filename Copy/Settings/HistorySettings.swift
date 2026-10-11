@@ -24,7 +24,7 @@ struct HistorySettings: View {
             }
 
             Section {
-                Toggle("Fetch Link Previews", isOn: $settings.fetchLinkPreviews)
+                Toggle(String(localized: "Fetch Link Previews"), isOn: $settings.fetchLinkPreviews)
             } footer: {
                 Text("Copy loads titles and icons for copied links from the web.")
                     .font(.footnote)
@@ -32,7 +32,7 @@ struct HistorySettings: View {
             }
 
             Section {
-                Toggle("Recognize Text in Images", isOn: $settings.recognizeImageText)
+                Toggle(String(localized: "Recognize Text in Images"), isOn: $settings.recognizeImageText)
             } footer: {
                 Text("Copy reads text in copied images so you can search and copy it. This runs entirely on your Mac.")
                     .font(.footnote)
@@ -55,8 +55,8 @@ struct HistorySettings: View {
 
     private var retentionFooter: String {
         if settings.retention == .unlimited {
-            return "Nothing is removed by age. Favorites and pinboard items are always kept."
+            return String(localized: "Nothing is removed by age. Favorites and pinboard items are always kept.")
         }
-        return "Items you haven't used in \(settings.retention.title.lowercased()) are removed. Favorites and pinboard items are always kept."
+        return String(localized: "Items you haven't used in \(settings.retention.title.lowercased()) are removed. Favorites and pinboard items are always kept.")
     }
 }

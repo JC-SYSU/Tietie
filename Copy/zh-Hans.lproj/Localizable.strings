@@ -1,0 +1,187 @@
+/* Settings - General */
+"Settings…" = "设置…";
+"General" = "通用";
+"Shortcuts" = "快捷键";
+"History" = "历史记录";
+"Privacy" = "隐私";
+"About" = "关于";
+
+/* Settings Section Subtitles */
+"Appearance, behavior, and startup." = "外观、行为和启动。";
+"Set the keys that summon Copy and paste for you." = "设置唤起 Copy 和粘贴的快捷键。";
+"How long items are kept and what Copy enriches." = "项目保留时长及 Copy 的内容增强功能。";
+"Keep sensitive apps and shared screens out of history." = "将敏感应用和屏幕共享排除在历史记录之外。";
+"Version, updates, and project links." = "版本、更新和项目链接。";
+
+/* Settings - General Pane */
+"Shelf Size" = "面板尺寸";
+"Standard" = "标准";
+"Compact" = "紧凑";
+"Compact shows smaller cards so more fit in the shelf at once." = "紧凑模式显示更小的卡片，一次可容纳更多内容。";
+
+"Shelf Style" = "面板样式";
+"Edge Attached" = "边缘附着";
+"Floating" = "悬浮";
+"Floating adds space around the shelf and rounds every corner." = "悬浮模式在面板周围增加空间并圆角化所有边角。";
+
+"Enable Favorites" = "启用收藏";
+"Show favorite actions and keep favorites at the front of history. Turning this off preserves saved favorites and their protection from automatic cleanup." = "显示收藏操作并将收藏内容保持在历史记录前端。关闭此选项会保留已保存的收藏及其自动清理保护。";
+
+"Appearance" = "外观";
+"Follow System" = "跟随系统";
+"Light" = "浅色";
+"Dark" = "深色";
+"Applies to the shelf, Paste Stack and Settings. Follow System uses your macOS appearance." = "应用于面板、粘贴栈和设置。跟随系统使用你的 macOS 外观。";
+
+"Clicking a Card" = "点击卡片";
+"Selects" = "选中";
+"Pastes" = "粘贴";
+"A single click selects a card. Double-click it or press Return to paste." = "单击选中卡片。双击或按回车键粘贴。";
+"A single click selects and immediately pastes a card." = "单击选中并立即粘贴卡片。";
+
+"Copy Sound" = "复制音效";
+"Off" = "关闭";
+"Plays after Copy captures a new clipboard item." = "Copy 捕获新剪贴板项目后播放。";
+
+"Haptic Feedback" = "触觉反馈";
+"A light tap on the trackpad when you switch tabs, file a card on a pinboard, or paste." = "切换标签页、将卡片归档到钉板或粘贴时在触控板上轻微振动。";
+
+"Launch at Login" = "登录时启动";
+"Waiting for approval in System Settings." = "等待系统设置中的批准。";
+
+"Hide the Menu Bar Icon" = "隐藏菜单栏图标";
+"Set the Open Copy shortcut above before hiding the menu bar icon." = "在隐藏菜单栏图标之前，请先设置打开 Copy 的快捷键。";
+"Copy stays available with the Shift Command V shortcut. You can reach Settings and everything else from the shelf." = "通过 Shift Command V 快捷键仍可使用 Copy。你可以从面板访问设置和其他所有功能。";
+
+/* Settings - Shortcuts Pane */
+"Open Copy:" = "打开 Copy：";
+"Paste Stack:" = "粘贴栈：";
+"Quick Paste Latest:" = "快速粘贴最新：";
+"Next Pinboard:" = "下一个钉板：";
+"Quick Paste Latest pastes your most recent item into the current app without opening Copy. While the shelf is open, hold Option and press a number to paste that card." = "快速粘贴最新功能会在不打开 Copy 的情况下将最新项目粘贴到当前应用。面板打开时，按住 Option 键并按数字可粘贴对应卡片。";
+
+/* Settings - History Pane */
+"Keep History" = "保留历史记录";
+"Unlimited" = "无限制";
+"1 Day" = "1 天";
+"1 Week" = "1 周";
+"1 Month" = "1 个月";
+"3 Months" = "3 个月";
+"Nothing is removed by age. Favorites and pinboard items are always kept." = "不会按时间删除任何内容。收藏和钉板项目始终保留。";
+"Items you haven't used in %@ are removed. Favorites and pinboard items are always kept." = "未使用超过 %@ 的项目会被删除。收藏和钉板项目始终保留。";
+
+"Fetch Link Previews" = "获取链接预览";
+"Copy loads titles and icons for copied links from the web." = "Copy 从网络加载已复制链接的标题和图标。";
+
+"Recognize Text in Images" = "识别图片中的文字";
+"Copy reads text in copied images so you can search and copy it. This runs entirely on your Mac." = "Copy 读取已复制图片中的文字，以便你搜索和复制。此功能完全在你的 Mac 上运行。";
+
+"Storage" = "存储";
+"No clearable history" = "无可清除的历史记录";
+"Favorites and pinboard items are kept and aren't counted here." = "收藏和钉板项目会保留，不计入此处。";
+"Clear History" = "清除历史记录";
+"Favorites and pinboard items are kept. This cannot be undone." = "收藏和钉板项目会保留。此操作无法撤销。";
+"%d item" = "%d 个项目";
+"%d items" = "%d 个项目";
+
+/* Settings - Privacy Pane */
+"Screen Sharing" = "屏幕共享";
+"Hide Copy windows during screen sharing" = "屏幕共享时隐藏 Copy 窗口";
+"Keeps your clipboard history out of screen recordings and shared screens." = "将你的剪贴板历史记录排除在屏幕录制和共享屏幕之外。";
+
+"Excluded Apps" = "排除的应用";
+"No excluded apps" = "无排除的应用";
+"Add App" = "添加应用";
+"Remove App" = "移除应用";
+"Copy never records concealed content from password managers." = "Copy 永远不会记录密码管理器中的隐藏内容。";
+
+/* Settings - About Pane */
+"Copy" = "Copy";
+"A visual shelf for your clipboard." = "剪贴板的可视化面板。";
+"Version %@ (%@)" = "版本 %@ (%@)";
+"Check for Updates…" = "检查更新…";
+"View Onboarding Again" = "再次查看引导";
+"View on GitHub" = "在 GitHub 上查看";
+"Report an Issue" = "报告问题";
+"License (GPL-3.0)" = "许可证 (GPL-3.0)";
+"© 2026 Tarik Caramanico · GPL-3.0" = "© 2026 Tarik Caramanico · GPL-3.0";
+
+/* Shelf - Search */
+"Search or filter…" = "搜索或筛选…";
+"Search %@" = "搜索 %@";
+"SEARCH OR FILTER" = "搜索或筛选";
+
+/* Shelf - Empty State */
+"Text, images, links, files, and colors all land here automatically." = "文字、图片、链接、文件和颜色都会自动出现在这里。";
+
+/* Shelf - Permission Banner */
+"Copy needs Accessibility access to paste." = "Copy 需要辅助功能权限才能粘贴。";
+"Open Settings" = "打开设置";
+
+/* Shelf - Cards & Actions */
+"Paste" = "粘贴";
+"Paste as Plain Text" = "粘贴为纯文本";
+"Open" = "打开";
+"Copy Text" = "复制文字";
+"Quick Look" = "快速查看";
+"Rotate Left" = "向左旋转";
+"Rotate Right" = "向右旋转";
+"Edit…" = "编辑…";
+"Adjust Color…" = "调整颜色…";
+"Rename…" = "重命名…";
+"Add to Paste Stack" = "添加到粘贴栈";
+"Remove from Pinboard" = "从钉板移除";
+"Show in History" = "在历史记录中显示";
+"Delete" = "删除";
+"Delete Pinboard" = "删除钉板";
+
+/* Shelf - Create/Edit Sheets */
+"New Item" = "新建项目";
+"Title (optional)" = "标题（可选）";
+"Create" = "创建";
+"Cancel" = "取消";
+"Save" = "保存";
+
+/* Shelf - Color Adjust */
+"Adjust Color" = "调整颜色";
+"Color" = "颜色";
+
+/* Shelf - Pinboard */
+"No Pinboards" = "无钉板";
+"Emoji" = "表情符号";
+"None" = "无";
+"Clear" = "清除";
+"Custom" = "自定义";
+
+/* Shelf - Tips */
+"Keyboard & Tips" = "键盘和提示";
+"Done" = "完成";
+"Open & paste" = "打开和粘贴";
+"Open or hide Copy" = "打开或隐藏 Copy";
+"Paste the selected card" = "粘贴选中的卡片";
+"Paste as plain text" = "粘贴为纯文本";
+"Paste the Nth card (hold ⌥ to see numbers)" = "粘贴第 N 张卡片（按住 ⌥ 查看编号）";
+"Preview the selected card" = "预览选中的卡片";
+"Open a link or file" = "打开链接或文件";
+"Search & navigate" = "搜索和导航";
+"Type" = "输入";
+"Search text, or filter by app, type, time…" = "搜索文字，或按应用、类型、时间筛选…";
+
+/* Paste Stack */
+"Paste Stack" = "粘贴栈";
+"Nothing queued" = "队列为空";
+"Add a copy with +, then ⌘V walks the stack." = "用 + 添加复制内容，然后 ⌘V 依次粘贴。";
+"Oldest first" = "最旧优先";
+"Newest first" = "最新优先";
+"⌘V pastes the next item · drag to reorder" = "⌘V 粘贴下一项 · 拖动以重新排序";
+"Next" = "下一项";
+
+/* Onboarding */
+"Welcome to Copy" = "欢迎使用 Copy";
+"A visual shelf for everything you copy." = "你复制的一切都在可视化面板中。";
+"Press ⇧⌘V anytime to open it." = "随时按 ⇧⌘V 打开。";
+"Copy pastes into the app you are using, which needs Accessibility access." = "Copy 会粘贴到你正在使用的应用，这需要辅助功能权限。";
+"On this version of macOS, allow Copy to read the clipboard so it can save your history." = "在此版本的 macOS 上，允许 Copy 读取剪贴板以保存你的历史记录。";
+"You can change this anytime in Settings." = "你可以随时在设置中更改此项。";
+"You are all set." = "一切就绪。";
+"Copy lives in your menu bar, ready when you need it." = "Copy 常驻菜单栏，随时待命。";

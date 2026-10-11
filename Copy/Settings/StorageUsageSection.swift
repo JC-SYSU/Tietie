@@ -48,19 +48,19 @@ struct StorageUsageSection: View {
             }
         }
         .onAppear(perform: reload)
-        .confirmationDialog("Clear clipboard history?", isPresented: $confirmClearAll) {
-            Button("Clear History", role: .destructive) { clearAll() }
-            Button("Cancel", role: .cancel) {}
+        .confirmationDialog(String(localized: "Clear clipboard history?"), isPresented: $confirmClearAll) {
+            Button(String(localized: "Clear History"), role: .destructive) { clearAll() }
+            Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
             Text("Favorites and pinboard items are kept. This cannot be undone.")
         }
         .confirmationDialog(
-            pendingKindClear.map { "Clear all \($0.label.lowercased()) from history?" } ?? "",
+            pendingKindClear.map { String(format: String(localized: "Clear all %@ from history?"), $0.label.lowercased()) } ?? "",
             isPresented: pendingKindClearShown,
             presenting: pendingKindClear
         ) { category in
-            Button("Clear \(category.label)", role: .destructive) { clear(category: category) }
-            Button("Cancel", role: .cancel) {}
+            Button(String(format: String(localized: "Clear %@"), category.label), role: .destructive) { clear(category: category) }
+            Button(String(localized: "Cancel"), role: .cancel) {}
         } message: { _ in
             Text("Favorites and pinboard items are kept. This cannot be undone.")
         }
@@ -71,7 +71,8 @@ struct StorageUsageSection: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("\(totalCount) \(totalCount == 1 ? "item" : "items")")
+                let itemText = totalCount == 1 ? String(localized: "%d item") : String(localized: "%d items")
+                Text(String(format: itemText, totalCount))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(byteString(totalBytes))

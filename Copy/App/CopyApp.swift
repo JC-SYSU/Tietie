@@ -15,7 +15,7 @@ struct CopyApp: App {
             // settings window instead of presenting an empty scene.
             .commands {
                 CommandGroup(replacing: .appSettings) {
-                    Button("Settings…") {
+                    Button(String(localized: "Settings…")) {
                         appDelegate.openSettingsFromCommand()
                     }
                     .keyboardShortcut(",", modifiers: .command)

@@ -208,7 +208,7 @@ final class ShelfViewModel {
     /// How many rows the active history/search query fetches. Hard-capped at 50: the
     /// shelf is a recents surface, and search — SQL-prefiltered, full history — is the
     /// retrieval path. `loadMoreIfNeeded` stays wired but never grows past the cap.
-    @ObservationIgnored private var page = PageWindow(pageSize: 50, growth: 200, lookahead: 20, maxLimit: 50)
+    @ObservationIgnored private var page = PageWindow(pageSize: 25, growth: 200, lookahead: 20, maxLimit: 25)
     /// Whether the active observation is a windowed one. The plain pinboard browse fetches
     /// every item on the board, so there's nothing to page there.
     @ObservationIgnored private var isPaged = true

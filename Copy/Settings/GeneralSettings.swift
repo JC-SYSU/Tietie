@@ -22,7 +22,7 @@ struct GeneralSettings: View {
     var body: some View {
         Form {
             Section {
-                Picker("Shelf Size", selection: $settings.compactShelf) {
+                Picker(String(localized: "Shelf Size"), selection: $settings.compactShelf) {
                     Text("Standard").tag(false)
                     Text("Compact").tag(true)
                 }
@@ -34,7 +34,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Picker("Shelf Style", selection: $settings.floatingShelf) {
+                Picker(String(localized: "Shelf Style"), selection: $settings.floatingShelf) {
                     Text("Edge Attached").tag(false)
                     Text("Floating").tag(true)
                 }
@@ -46,7 +46,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Toggle("Enable Favorites", isOn: $settings.favoritesEnabled)
+                Toggle(String(localized: "Enable Favorites"), isOn: $settings.favoritesEnabled)
             } footer: {
                 Text("Show favorite actions and keep favorites at the front of history. Turning this off preserves saved favorites and their protection from automatic cleanup.")
                     .font(.footnote)
@@ -54,7 +54,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Picker("Appearance", selection: $settings.shelfTheme) {
+                Picker(String(localized: "Appearance"), selection: $settings.shelfTheme) {
                     ForEach(ShelfTheme.allCases) { theme in Text(theme.title).tag(theme) }
                 }
                 .pickerStyle(.segmented)
@@ -65,15 +65,15 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Picker("Clicking a Card", selection: $settings.doubleClickToPaste) {
+                Picker(String(localized: "Clicking a Card"), selection: $settings.doubleClickToPaste) {
                     Text("Selects").tag(true)
                     Text("Pastes").tag(false)
                 }
                 .pickerStyle(.segmented)
             } footer: {
                 Text(settings.doubleClickToPaste
-                     ? "A single click selects a card. Double-click it or press Return to paste."
-                     : "A single click selects and immediately pastes a card.")
+                     ? String(localized: "A single click selects a card. Double-click it or press Return to paste.")
+                     : String(localized: "A single click selects and immediately pastes a card."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -82,7 +82,7 @@ struct GeneralSettings: View {
                 HStack {
                     Text("Copy Sound")
                     Spacer()
-                    Picker("Copy Sound", selection: $settings.copySound) {
+                    Picker(String(localized: "Copy Sound"), selection: $settings.copySound) {
                         ForEach(CopySound.allCases) { sound in
                             Text(sound.title).tag(sound)
                         }
@@ -101,7 +101,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Toggle("Haptic Feedback", isOn: $settings.hapticFeedback)
+                Toggle(String(localized: "Haptic Feedback"), isOn: $settings.hapticFeedback)
             } footer: {
                 Text("A light tap on the trackpad when you switch tabs, file a card on a pinboard, or paste.")
                     .font(.footnote)
@@ -109,7 +109,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Toggle("Launch at Login", isOn: launchAtLoginBinding)
+                Toggle(String(localized: "Launch at Login"), isOn: launchAtLoginBinding)
             } footer: {
                 if let launchAtLoginError {
                     Text(launchAtLoginError)
@@ -127,7 +127,7 @@ struct GeneralSettings: View {
                 // turning it OFF, so a user who's already stranded (hotkey cleared
                 // while this was on) can always self-rescue by flipping it back off.
                 // AppDelegate's guard is still the authoritative check either way.
-                Toggle("Hide the Menu Bar Icon", isOn: $settings.hideMenuBarIcon)
+                Toggle(String(localized: "Hide the Menu Bar Icon"), isOn: $settings.hideMenuBarIcon)
                     .disabled(!shelfHotkeySet && !settings.hideMenuBarIcon)
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {

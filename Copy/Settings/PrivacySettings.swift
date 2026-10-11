@@ -11,7 +11,7 @@ struct PrivacySettings: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Hide Copy windows during screen sharing", isOn: $settings.hideDuringScreenSharing)
+                Toggle(String(localized: "Hide Copy windows during screen sharing"), isOn: $settings.hideDuringScreenSharing)
             } header: {
                 Text("Screen Sharing")
             } footer: {
@@ -37,14 +37,14 @@ struct PrivacySettings: View {
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("Add App")
+                    .accessibilityLabel(String(localized: "Add App"))
 
                     Button {
                         removeSelectedApp()
                     } label: {
                         Image(systemName: "minus")
                     }
-                    .accessibilityLabel("Remove App")
+                    .accessibilityLabel(String(localized: "Remove App"))
                     .disabled(selectedBundleID == nil)
 
                     Spacer()

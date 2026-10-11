@@ -12,12 +12,12 @@ struct ShortcutsSettings: View {
     var body: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("Open Copy:", name: .toggleShelf) { _ in
+                KeyboardShortcuts.Recorder(String(localized: "Open Copy:"), name: .toggleShelf) { _ in
                     settings.onShelfHotkeyChange?()
                 }
-                KeyboardShortcuts.Recorder("Paste Stack:", name: .togglePasteStack)
-                KeyboardShortcuts.Recorder("Quick Paste Latest:", name: .quickPasteLatest)
-                KeyboardShortcuts.Recorder("Next Pinboard:", name: .nextPinboard)
+                KeyboardShortcuts.Recorder(String(localized: "Paste Stack:"), name: .togglePasteStack)
+                KeyboardShortcuts.Recorder(String(localized: "Quick Paste Latest:"), name: .quickPasteLatest)
+                KeyboardShortcuts.Recorder(String(localized: "Next Pinboard:"), name: .nextPinboard)
             } footer: {
                 Text("Quick Paste Latest pastes your most recent item into the current app without opening Copy. While the shelf is open, hold Option and press a number to paste that card.")
                     .font(.footnote)

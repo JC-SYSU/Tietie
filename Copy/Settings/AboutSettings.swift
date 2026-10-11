@@ -22,14 +22,14 @@ struct AboutSettings: View {
 
             Form {
                 Section {
-                    Button("Check for Updates…") { settings.onCheckForUpdates?() }
-                    Button("View Onboarding Again") { settings.onShowOnboarding?() }
+                    Button(String(localized: "Check for Updates…")) { settings.onCheckForUpdates?() }
+                    Button(String(localized: "View Onboarding Again")) { settings.onShowOnboarding?() }
                 }
 
                 Section {
-                    Button("View on GitHub") { NSWorkspace.shared.open(Self.repoURL) }
-                    Button("Report an Issue") { NSWorkspace.shared.open(Self.issuesURL) }
-                    Button("License (GPL-3.0)") { NSWorkspace.shared.open(Self.licenseURL) }
+                    Button(String(localized: "View on GitHub")) { NSWorkspace.shared.open(Self.repoURL) }
+                    Button(String(localized: "Report an Issue")) { NSWorkspace.shared.open(Self.issuesURL) }
+                    Button(String(localized: "License (GPL-3.0)")) { NSWorkspace.shared.open(Self.licenseURL) }
                 } footer: {
                     Text("© 2026 Tarik Caramanico · GPL-3.0")
                         .font(.footnote)
@@ -62,6 +62,6 @@ struct AboutSettings: View {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(short) (\(build))"
+        return String(localized: "Version \(short) (\(build))")
     }
 }

@@ -57,6 +57,9 @@ struct ShelfRootView: View {
         // legend strip, padding) fell through to the window behind the shelf.
         .background(Color.black.opacity(0.001).ignoresSafeArea())
         .glassSurface(corners: GlassSurfaceCorners())
+        // 外阴影: 面板在屏幕底部, 往上投影匹配光源从上而来的视觉逻辑。在容器视图
+        // 层面施加(而不是在 glassSurface 内部对玻璃材质施加), 避免触发离屏层变黑。
+        .shadow(color: Color.black.opacity(0.35), radius: 15, y: -6)
         .clipShape(UnevenRoundedRectangle(
             topLeadingRadius: 0,
             bottomLeadingRadius: 0,
