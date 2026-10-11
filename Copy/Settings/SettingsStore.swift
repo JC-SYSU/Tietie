@@ -8,6 +8,21 @@ import Observation
 /// name the system uses, so what a screener reads here is what they would read in Sound
 /// settings. Raw values are persisted in UserDefaults, so keep them stable across
 /// releases.
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case system
+    case zhHans = "zh-Hans"
+    case en
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .system: return "Follow System"
+        case .zhHans: return "简体中文"
+        case .en: return "English"
+        }
+    }
+}
+
 enum CopySound: String, CaseIterable, Identifiable {
     case off
     case basso, blow, bottle, frog, funk, glass, hero
@@ -109,6 +124,8 @@ final class SettingsStore {
     static let doubleClickToPasteKey = "doubleClickToPaste"
     static let copySoundKey = "copySound"
     static let hapticFeedbackKey = "hapticFeedback"
+    static let appLanguageKey = "appLanguage"
+    static let candidateLimitKey = "candidateLimit"
 
     var retention: RetentionPeriod {
         didSet {
@@ -249,6 +266,28 @@ final class SettingsStore {
         }
     }
 
+    /// UI 语言。写入 `AppleLanguages` 并要求重启生效——系统框架无法在运行时切换。
+    var appLanguage: AppLanguage {
+        didSet {
+            guard appLanguage != oldValue else { return }
+            defaults.set(appLanguage.rawValue, forKey: Self.appLanguageKey)
+            switch appLanguage {
+            case .system:
+                defaults.removeObject(forKey: "AppleLanguages")
+            case .zhHans, .en:
+                defaults.set([appLanguage.rawValue], forKey: "AppleLanguages")
+            }
+        }
+    }
+
+    /// 搜索结果候选上限。10/25/50 三档, 由设置面板选定。
+    var candidateLimit: Int {
+        didSet {
+            guard candidateLimit != oldValue else { return }
+            defaults.set(candidateLimit, forKey: Self.candidateLimitKey)
+        }
+    }
+
     @ObservationIgnored var onRulesChange: ((Set<String>) -> Void)?
     /// Fired by the About pane's "Check for Updates…" button. Bridged to Sparkle's
     /// `updaterController` in `AppDelegate` (which owns it), so this store — and the
@@ -299,6 +338,13 @@ final class SettingsStore {
         let haptics = (defaults.object(forKey: Self.hapticFeedbackKey) as? Bool) ?? true
         hapticFeedback = haptics
         Haptics.isEnabled = haptics
+        if let raw = defaults.string(forKey: Self.appLanguageKey), let lang = AppLanguage(rawValue: raw) {
+            appLanguage = lang
+        } else {
+            appLanguage = .system
+        }
+        let savedLimit = defaults.object(forKey: Self.candidateLimitKey) as? Int
+        candidateLimit = [10, 25, 50].contains(savedLimit) ? savedLimit! : 25
         if let data = defaults.data(forKey: Self.excludedBundleIDsKey),
            let decoded = try? JSONDecoder().decode([String].self, from: data) {
             excludedBundleIDs = decoded.sorted()
@@ -310,6 +356,10 @@ final class SettingsStore {
         } else {
             excludedBundleIDs = []
         }
+        // 设置面板已移除以下选项, 统一固定值: 标准尺寸 / 边缘附着 / 点击选中。
+        compactShelf = false
+        floatingShelf = false
+        doubleClickToPaste = true
     }
 
     func addExcludedApp(bundleID: String) {

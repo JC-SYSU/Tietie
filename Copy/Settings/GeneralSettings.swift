@@ -22,25 +22,27 @@ struct GeneralSettings: View {
     var body: some View {
         Form {
             Section {
-                Picker(String(localized: "Shelf Size"), selection: $settings.compactShelf) {
-                    Text("Standard").tag(false)
-                    Text("Compact").tag(true)
+                Picker(String(localized: "Language"), selection: $settings.appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.title).tag(lang)
+                    }
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Compact shows smaller cards so more fit in the shelf at once.")
+                Text(String(localized: "Restart Copy for language changes to take effect."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                Picker(String(localized: "Shelf Style"), selection: $settings.floatingShelf) {
-                    Text("Edge Attached").tag(false)
-                    Text("Floating").tag(true)
+                Picker(String(localized: "Candidate Limit"), selection: $settings.candidateLimit) {
+                    Text("10").tag(10)
+                    Text("25").tag(25)
+                    Text("50").tag(50)
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Floating adds space around the shelf and rounds every corner.")
+                Text(String(localized: "Maximum number of items shown in the shelf at once."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -60,20 +62,6 @@ struct GeneralSettings: View {
                 .pickerStyle(.segmented)
             } footer: {
                 Text("Applies to the shelf, Paste Stack and Settings. Follow System uses your macOS appearance.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Picker(String(localized: "Clicking a Card"), selection: $settings.doubleClickToPaste) {
-                    Text("Selects").tag(true)
-                    Text("Pastes").tag(false)
-                }
-                .pickerStyle(.segmented)
-            } footer: {
-                Text(settings.doubleClickToPaste
-                     ? String(localized: "A single click selects a card. Double-click it or press Return to paste.")
-                     : String(localized: "A single click selects and immediately pastes a card."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

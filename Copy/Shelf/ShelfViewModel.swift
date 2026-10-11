@@ -253,7 +253,7 @@ final class ShelfViewModel {
     /// Restarts the query after the search, tab, or facets changed. A new query starts back
     /// at the first page, so the window never carries over from the previous one.
     func refresh() {
-        page.reset()
+        pageIndex = 0
         previewShown = false
         startObservation()
     }
@@ -278,7 +278,7 @@ final class ShelfViewModel {
         if filter.hasText {
             // Text search is one-shot (FTS); re-runs whenever the query changes.
             isPaged = true
-            apply((try? store.search(filter: filter, limit: page.limit, favoritesFirst: settings.favoritesEnabled)) ?? [])
+            apply((try? store.search(filter: filter, limit: settings.candidateLimit, favoritesFirst: settings.favoritesEnabled)) ?? [])
         } else if searchQuery.tokens.isEmpty, case .pinboard(let id) = tab {
             // Plain pinboard browse: keep the dedicated observation (preserves manual order).
             isPaged = false
@@ -288,7 +288,7 @@ final class ShelfViewModel {
         } else {
             // History browse or facet-only: stays live as new items are captured.
             isPaged = true
-            token = store.observeRecent(filter: filter, limit: page.limit, favoritesFirst: settings.favoritesEnabled,
+            token = store.observeRecent(filter: filter, limit: settings.candidateLimit, favoritesFirst: settings.favoritesEnabled,
                                         onError: { NSLog("Copy: observation failed: \($0)") },
                                         onChange: { [weak self] in self?.apply($0) })
         }
@@ -298,16 +298,8 @@ final class ShelfViewModel {
     /// query against it. Each card calls this from `.onAppear`; `PageWindow` decides when a
     /// wider fetch is actually warranted (and when the history has run out).
     func loadMoreIfNeeded(at index: Int) {
-        // `items` is favorites-then-recents, but the window only bounds the recents — the
-        // store returns every matching favorite regardless of `limit`. Measure in
-        // recents-space so a big favorites block can't read as "this page came back full"
-        // and keep growing the window against an already-exhausted history. A favorite's
-        // own card yields a negative index here and never trips the lookahead, which is
-        // right: favorites sit at the front, nowhere near the oldest card.
-        guard isPaged,
-              page.growIfNeeded(visibleIndex: index - favoritesCount,
-                                loadedCount: items.count - favoritesCount) else { return }
-        startObservation()
+        // 翻页模式下不自动扩窗: 候选数由 candidateLimit 固定, 无需增长窗口。
+        // 保留此方法以兼容视图调用点, 但它是空操作。
     }
 
     // MARK: Smart search
