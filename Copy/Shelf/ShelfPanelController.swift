@@ -31,7 +31,6 @@ private final class ShelfClippingView: NSView {
         shelfContent = content
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.masksToBounds = true
         addSubview(content)
         content.autoresizingMask = [.width, .height]
     }
