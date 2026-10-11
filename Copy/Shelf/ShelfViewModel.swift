@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CopyCore
 import Observation
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
@@ -78,6 +79,12 @@ final class ShelfViewModel {
     }
     var pinboards: [Pinboard] = []
     var selection = ShelfSelection()
+    /// 翻页滚动状态: 页码、每页卡片数、滚动视图的锚定卡片 (scrollPosition 绑定)。
+    private(set) var pageIndex = 0
+    var scrollPositionID: String?
+    private(set) var pageCapacity = 6
+    @ObservationIgnored private var pageAccumulator: CGFloat = 0
+    @ObservationIgnored private var pageFlipCooldownUntil = Date.distantPast
     /// The drag-select in the card row: its rectangle and which cards it touches. The
     /// selection it produces is applied in `updateCardSweep`.
     let cardSweep = CardSweep()
@@ -390,12 +397,16 @@ final class ShelfViewModel {
     /// item rather than clearing it, since `show()` doesn't re-run `apply(_:)` on
     /// reopen — leaving the selection empty here would otherwise leave ⏎/Space dead
     /// until the user first pressed an arrow key.
-    /// Show-time reset: the rail returns to the newest card and the selection lands on
-    /// it, instead of reopening at the previous scroll position.
+    /// Show-time reset: 回到第 0 页, 选中与锚定都落在最新一张。
     func prepareForShow() {
+        pageIndex = 0
         cardSweep.scrollToStart()
-        if selection.primary != items.first?.uuid {
-            if let first = items.first { selection.click(first.uuid) } else { selection.reset() }
+        if let first = items.first {
+            selection.click(first.uuid)
+            scrollPositionID = first.uuid
+        } else {
+            selection.reset()
+            scrollPositionID = nil
         }
     }
 
@@ -496,6 +507,64 @@ final class ShelfViewModel {
 
     func moveSelection(_ delta: Int) {
         selection.move(delta, in: items.map(\.uuid))
+        followSelection()
+    }
+
+    /// 键盘/跳转让选中变化后, 翻到选中卡所在页并锚定它。
+    private func followSelection() {
+        guard let primary = selection.primary,
+              let index = items.firstIndex(where: { $0.uuid == primary }) else { return }
+        let capacity = max(1, pageCapacity)
+        pageIndex = index / capacity
+        scrollPositionID = items[index].uuid
+    }
+
+    // MARK: 翻页滚动
+
+    /// 一次手势翻一页的累计阈值 (横向点增量, px)。
+    private static let pageFlipThreshold: CGFloat = 120
+    /// 翻页后的静默期: 手势的剩余/动量事件在此期间被忽略, 防止一滑连翻。
+    private static let pageFlipCooldown: TimeInterval = 0.35
+    /// 触控板方向翻转 (若实测方向相反, 改 -1)。
+    private static let pageDirectionSign: CGFloat = 1
+
+    /// 面板上的滚轮/双指事件全部由这里消化: 累计横向增量, 过阈或手势结束翻一页。
+    /// 动量事件直接吞掉——翻页没有惯性, 这正是目的。
+    func pageScroll(_ event: NSEvent) {
+        let dx = event.scrollingDeltaX * Self.pageDirectionSign
+        let now = Date()
+        if !event.momentumPhase.isEmpty { return }
+        if event.phase == .ended {
+            defer { pageAccumulator = 0 }
+            if now >= pageFlipCooldownUntil { flipPage(direction: pageAccumulator >= 0 ? 1 : -1) }
+            return
+        }
+        if event.phase == .cancelled { pageAccumulator = 0; return }
+        if now < pageFlipCooldownUntil { return }
+        pageAccumulator += dx
+        if abs(pageAccumulator) >= Self.pageFlipThreshold {
+            flipPage(direction: pageAccumulator > 0 ? 1 : -1)
+            pageAccumulator = 0
+            pageFlipCooldownUntil = now.addingTimeInterval(Self.pageFlipCooldown)
+        }
+    }
+
+    private func flipPage(direction: Int) {
+        let capacity = max(1, pageCapacity)
+        let maxPage = max(0, (items.count + capacity - 1) / capacity - 1)
+        guard direction != 0, maxPage > 0 else { return }
+        pageIndex = min(max(pageIndex + direction, 0), maxPage)
+        let index = min(pageIndex * capacity, max(0, items.count - 1))
+        guard items.indices.contains(index) else { return }
+        let target = items[index]
+        Haptics.tap()
+        selection.click(target.uuid)
+        withAnimation(.easeOut(duration: 0.2)) { scrollPositionID = target.uuid }
+    }
+
+    /// 轨道视口宽度变化时重算每页卡片数。
+    func updatePageCapacity(for viewportWidth: CGFloat) {
+        pageCapacity = max(1, Int(viewportWidth / 240))
     }
 
     func requestPaste(_ item: ClipItem, plain: Bool) {
@@ -1122,7 +1191,8 @@ final class ShelfViewModel {
         if let jump = pendingJumpItemID {
             pendingJumpItemID = nil
             if order.contains(jump) {
-                selection.click(jump)   // sets primary → ShelfRootView's onChange animates the scroll
+                selection.click(jump)
+                followSelection()
                 flashItem(jump)
                 return
             }

@@ -79,6 +79,9 @@ final class AppCoordinator {
         controller.onShow = { [weak self] in
             self?.shelfViewModel.prepareForShow()
         }
+        controller.onScroll = { [weak self] event in
+            self?.shelfViewModel.pageScroll(event)
+        }
         controller.onKeyEvent = { [weak self, weak controller] event in
             guard let self, let controller else { return false }
             let viewModel = self.shelfViewModel

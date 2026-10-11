@@ -176,6 +176,8 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// Fired at the start of every `show()`, before the panel animates in: the shelf
     /// resets to the newest card instead of reopening at the previous scroll position.
     var onShow: (() -> Void)? = nil
+    /// 面板上的滚轮/双指事件交给翻页逻辑消化。
+    var onScroll: ((NSEvent) -> Void)? = nil
 
     private let makeContent: () -> NSView
     private var panel: KeyablePanel?
@@ -417,6 +419,11 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             switch event.type {
             case .keyDown:
                 return (self.onKeyEvent?(event) ?? false) ? nil : event
+            case .scrollWheel:
+                // 面板可见时滚动全部由翻页逻辑消化: 不透传、不进系统滚动。
+                guard event.window === self.panel else { return event }
+                self.onScroll?(event)
+                return nil
             case .flagsChanged:
                 self.onFlagsChanged?(event)
                 return event

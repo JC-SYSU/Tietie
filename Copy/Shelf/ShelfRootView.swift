@@ -546,8 +546,7 @@ private struct ShelfItemsRow: View {
         if viewModel.items.isEmpty {
             ShelfEmptyState(viewModel: viewModel)
         } else {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: Tokens.cardGap(compact: compact)) {
                         ForEach(Array(viewModel.items.enumerated()), id: \.element.uuid) { index, item in
                             // A divider between the leading favorites and the rest.
@@ -651,26 +650,10 @@ private struct ShelfItemsRow: View {
                 .coordinateSpace(name: CardSweep.viewportSpace)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("shelfRoot")) } action: {
                     viewModel.cardSweep.viewportFrame = $0
+                    viewModel.updatePageCapacity(for: $0.width)
                 }
                 .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
-                // 纵向封死: 轨道只响应横向滚动。
-                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-                .onChange(of: viewModel.selection.primary) { _, newPrimary in
-                    // A sweep moves the primary with the pointer; centering on it would
-                    // scroll the row out from under the rectangle.
-                    if let newPrimary, !viewModel.cardSweep.isActive {
-                        let index = viewModel.items.firstIndex { $0.uuid == newPrimary } ?? -1
-                        JumpProbe.log("scrollTo idx=\(index)/\(viewModel.items.count) uuid=\(newPrimary)")
-                        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                            proxy.scrollTo(newPrimary, anchor: .center)
-                        } else {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                proxy.scrollTo(newPrimary, anchor: .center)
-                            }
-                        }
-                    }
-                }
-            }
+                .scrollPosition(id: $viewModel.scrollPositionID)
         }
     }
 }
