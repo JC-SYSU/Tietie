@@ -130,7 +130,7 @@ private struct PermissionBanner: View {
                 Text("Copy needs Accessibility access to paste.")
                     .font(Tokens.caption)
                     .foregroundStyle(.secondary)
-                Button("Open Settings") { openAccessibilitySettings() }
+                Button(String(localized: "Open Settings")) { openAccessibilitySettings() }
                     .buttonStyle(.link)
                     .font(Tokens.caption)
                 Spacer(minLength: 8)
@@ -168,9 +168,9 @@ private struct ShelfHeader: View {
     private var searchPlaceholder: String {
         if case .pinboard(let id) = viewModel.tab,
            let name = viewModel.pinboards.first(where: { $0.id == id })?.name {
-            return "Search \(name)"
+            return String(format: String(localized: "Search %@"), name)
         }
-        return "Search or filter…"
+        return String(localized: "Search or filter…")
     }
 
     var body: some View {

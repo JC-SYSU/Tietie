@@ -18,7 +18,7 @@ struct CreateItemSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            TextField("Title (optional)", text: $title)
+            TextField(String(localized: "Title (optional)"), text: $title)
                 .textFieldStyle(.roundedBorder)
             TextEditor(text: $text)
                 .font(.system(size: 13, design: .monospaced))
@@ -51,9 +51,9 @@ struct CreateItemSheet: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Button("Cancel", action: onCancel)
+            Button(String(localized: "Cancel"), action: onCancel)
                 .keyboardShortcut(.cancelAction)
-            Button("Create") {
+            Button(String(localized: "Create")) {
                 onCreate(text, title.isEmpty ? nil : title)
             }
             .keyboardShortcut(.defaultAction)

@@ -83,6 +83,10 @@
 "Favorites and pinboard items are kept. This cannot be undone." = "收藏和钉板项目会保留。此操作无法撤销。";
 "%d item" = "%d 个项目";
 "%d items" = "%d 个项目";
+"Clear clipboard history?" = "清除剪贴板历史记录？";
+"Clear all %@ from history?" = "从历史记录中清除全部%@？";
+"Clear %@" = "清除%@";
+"Cancel" = "取消";
 
 /* Settings - Privacy Pane */
 "Screen Sharing" = "屏幕共享";
@@ -129,6 +133,9 @@
 "Edit…" = "编辑…";
 "Adjust Color…" = "调整颜色…";
 "Rename…" = "重命名…";
+"Favorite" = "收藏";
+"Unfavorite" = "取消收藏";
+"Add to Pinboard" = "添加到钉板";
 "Add to Paste Stack" = "添加到粘贴栈";
 "Remove from Pinboard" = "从钉板移除";
 "Show in History" = "在历史记录中显示";
@@ -139,7 +146,6 @@
 "New Item" = "新建项目";
 "Title (optional)" = "标题（可选）";
 "Create" = "创建";
-"Cancel" = "取消";
 "Save" = "保存";
 
 /* Shelf - Color Adjust */

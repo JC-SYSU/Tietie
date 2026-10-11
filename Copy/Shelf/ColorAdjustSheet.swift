@@ -22,12 +22,12 @@ struct ColorAdjustSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Adjust Color")
                 .font(.headline)
-            ColorPicker("Color", selection: $color, supportsOpacity: false)
+            ColorPicker(String(localized: "Color"), selection: $color, supportsOpacity: false)
             HStack {
                 Spacer()
-                Button("Cancel", action: onCancel)
+                Button(String(localized: "Cancel"), action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                Button("Copy") { onCopy(Tokens.hex(from: color)) }
+                Button(String(localized: "Copy")) { onCopy(Tokens.hex(from: color)) }
                     .keyboardShortcut(.defaultAction)
             }
         }

@@ -200,38 +200,38 @@ struct ItemCardView: View {
         .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.72), value: isSelected)
         .contextMenu {
             if canShowInHistory {
-                Button("Show in History", action: onShowInHistory)
+                Button(String(localized: "Show in History"), action: onShowInHistory)
                     .keyboardShortcut("g", modifiers: .command)
                 Divider()
             }
-            Button("Paste", action: onPaste)
-            Button("Paste as Plain Text", action: onPastePlain)
+            Button(String(localized: "Paste"), action: onPaste)
+            Button(String(localized: "Paste as Plain Text"), action: onPastePlain)
             if item.kind == .link || item.kind == .file {
-                Button("Open", action: onOpen)
+                Button(String(localized: "Open"), action: onOpen)
                     .keyboardShortcut("o", modifiers: .command)
             }
             if item.recognizedText?.isEmpty == false {
-                Button("Copy Text", action: onCopyText)
+                Button(String(localized: "Copy Text"), action: onCopyText)
             }
             if item.kind == .file, !quickLookURLs.isEmpty {
-                Button("Quick Look", action: onQuickLook)
+                Button(String(localized: "Quick Look"), action: onQuickLook)
             }
             if item.kind == .image {
-                Button("Rotate Left") { onRotate(false) }
-                Button("Rotate Right") { onRotate(true) }
+                Button(String(localized: "Rotate Left")) { onRotate(false) }
+                Button(String(localized: "Rotate Right")) { onRotate(true) }
             }
             Divider()
             if isEditable {
-                Button("Edit…", action: onEdit)
+                Button(String(localized: "Edit…"), action: onEdit)
                     .keyboardShortcut("e", modifiers: .command)
             } else if item.kind == .color {
-                Button("Adjust Color…", action: onAdjustColor)
+                Button(String(localized: "Adjust Color…"), action: onAdjustColor)
             }
-            Button("Rename…", action: onBeginInlineRename)
+            Button(String(localized: "Rename…"), action: onBeginInlineRename)
             if favoritesEnabled {
-                Button(item.isFavorite ? "Unfavorite" : "Favorite", action: onToggleFavorite)
+                Button(item.isFavorite ? String(localized: "Unfavorite") : String(localized: "Favorite"), action: onToggleFavorite)
             }
-            Menu("Add to Pinboard") {
+            Menu(String(localized: "Add to Pinboard")) {
                 if pinboards.isEmpty {
                     Text("No Pinboards")
                 } else {
@@ -244,12 +244,12 @@ struct ItemCardView: View {
                     }
                 }
             }
-            Button("Add to Paste Stack", action: onAddToPasteStack)
+            Button(String(localized: "Add to Paste Stack"), action: onAddToPasteStack)
             if currentPinboardID != nil {
-                Button("Remove from Pinboard", action: onRemoveFromPinboard)
+                Button(String(localized: "Remove from Pinboard"), action: onRemoveFromPinboard)
             }
             Divider()
-            Button("Delete", role: .destructive, action: onDelete)
+            Button(String(localized: "Delete"), role: .destructive, action: onDelete)
         }
         .onDrag(dragProvider) { dragPreview }
         .modifier(CardClickGesture(onClick: onClick))
