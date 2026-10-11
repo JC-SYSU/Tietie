@@ -8,11 +8,6 @@ import Foundation
 /// ItemStore narrows candidates with a SQL LIKE prefilter first; this type is the
 /// matching authority on whatever rows survive it.
 enum TextMatch {
-    /// Newest rows a text query scans before older history stops matching. The LIKE
-    /// prefilter usually shrinks candidates far below this; it only bounds the
-    /// pathological all-words-common case.
-    static let candidateWindow = 10_000
-
     /// Case-folds and collapses whitespace runs to single spaces.
     static func normalize(_ text: String) -> String {
         text.lowercased()
@@ -32,6 +27,14 @@ enum TextMatch {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_") + "%"
+    }
+
+    /// Whether a LIKE prefilter for `word` (already lowercased) also needs its
+    /// upper-case spelling. SQLite's LIKE folds ASCII case on its own, so a Latin word
+    /// needs only one pattern; a word carrying a non-ASCII cased letter (é, ü, …) needs
+    /// the second. Words with no case at all (CJK) never do.
+    static func prefilterNeedsUppercase(_ word: String) -> Bool {
+        word.uppercased() != word && word.contains { !$0.isASCII }
     }
 
     /// Every field a query can land in — the same set the FTS table indexed
