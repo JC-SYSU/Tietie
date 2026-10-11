@@ -267,17 +267,17 @@ private struct DrawerMenu: View {
         }
         add("New Item…") { viewModel.onNewItem?() }
         add("Paste Stack", checked: viewModel.isPasteStackOn) { viewModel.onTogglePasteStack?() }
-        add(viewModel.isPrivacyModeOn ? "Resume Monitoring" : "Pause Monitoring") { viewModel.onTogglePrivacyMode?() }
+        add(viewModel.isPrivacyModeOn ? String(localized: "Resume Monitoring") : String(localized: "Pause Monitoring")) { viewModel.onTogglePrivacyMode?() }
         menu.addItem(.separator())
-        add("Clear History…") { viewModel.onClearHistory?() }
-        add("Export…") { viewModel.onExportHistory?() }
-        add("Import…") { viewModel.onImportHistory?() }
+        add(String(localized: "Clear History…")) { viewModel.onClearHistory?() }
+        add(String(localized: "Export…")) { viewModel.onExportHistory?() }
+        add(String(localized: "Import…")) { viewModel.onImportHistory?() }
         menu.addItem(.separator())
-        add("Keyboard & Tips…") { viewModel.showingTips = true }
-        add("Settings…") { viewModel.onOpenSettings?() }
-        add("Check for Updates…") { viewModel.onCheckForUpdates?() }
+        add(String(localized: "Keyboard & Tips…")) { viewModel.showingTips = true }
+        add(String(localized: "Settings…")) { viewModel.onOpenSettings?() }
+        add(String(localized: "Check for Updates…")) { viewModel.onCheckForUpdates?() }
         menu.addItem(.separator())
-        add("Quit Copy") { viewModel.onQuit?() }
+        add(String(localized: "Quit Copy")) { viewModel.onQuit?() }
 
         guard let window = NSApp.keyWindow, let content = window.contentView else { return }
         let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
@@ -757,10 +757,10 @@ private struct KeyboardLegend: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            KeyHint(key: "↩", label: "Paste")
-            KeyHint(key: "Space", label: "Preview")
-            KeyHint(key: "⇧↩", label: "Plain text")
-            KeyHint(key: "⌘⌫", label: "Delete")
+            KeyHint(key: "↩", label: String(localized: "Paste"))
+            KeyHint(key: "Space", label: String(localized: "Preview"))
+            KeyHint(key: "⇧↩", label: String(localized: "Plain text"))
+            KeyHint(key: "⌘⌫", label: String(localized: "Delete"))
             Spacer(minLength: 8)
             pageIndicator
         }
@@ -774,7 +774,7 @@ private struct KeyboardLegend: View {
         HStack(spacing: 5) {
             Image(systemName: "rectangle.split.3x1")
                 .font(.system(size: 10, weight: .medium))
-            Text("第 \(pageIndex + 1) / \(pageCount) 页")
+            Text(String(format: String(localized: "Page %d / %d"), pageIndex + 1, pageCount))
                 .font(.system(size: 11, weight: .medium))
                 .monospacedDigit()
         }
