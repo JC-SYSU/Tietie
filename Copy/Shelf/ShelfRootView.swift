@@ -657,6 +657,8 @@ private struct ShelfItemsRow: View {
                     // A sweep moves the primary with the pointer; centering on it would
                     // scroll the row out from under the rectangle.
                     if let newPrimary, !viewModel.cardSweep.isActive {
+                        let index = viewModel.items.firstIndex { $0.uuid == newPrimary } ?? -1
+                        JumpProbe.log("scrollTo idx=\(index)/\(viewModel.items.count) uuid=\(newPrimary)")
                         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                             proxy.scrollTo(newPrimary, anchor: .center)
                         } else {

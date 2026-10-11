@@ -1117,6 +1117,7 @@ final class ShelfViewModel {
         items = settings.favoritesEnabled ? favorites + rest : new
         favoritesCount = settings.favoritesEnabled ? favorites.count : 0
         let order = items.map(\.uuid)
+        let primaryBefore = selection.primary
         selection.prune(existing: Set(order), order: order)
         if let jump = pendingJumpItemID {
             pendingJumpItemID = nil
@@ -1127,6 +1128,7 @@ final class ShelfViewModel {
             }
         }
         if selection.selected.isEmpty, let first = items.first { selection.click(first.uuid) }
+        JumpProbe.log("apply n=\(new.count) primary=\(selection.primary ?? "nil") primaryChanged=\(selection.primary != primaryBefore ? "Y" : "N")")
     }
 
     /// Builds the drag payload for a card: its native representations (so dragging out
