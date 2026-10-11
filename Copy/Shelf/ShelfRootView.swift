@@ -653,6 +653,8 @@ private struct ShelfItemsRow: View {
                     viewModel.cardSweep.viewportFrame = $0
                 }
                 .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
+                // 纵向封死: 轨道只响应横向滚动。
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
                 .onChange(of: viewModel.selection.primary) { _, newPrimary in
                     // A sweep moves the primary with the pointer; centering on it would
                     // scroll the row out from under the rectangle.
