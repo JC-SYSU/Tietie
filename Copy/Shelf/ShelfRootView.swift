@@ -127,7 +127,7 @@ private struct PermissionBanner: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
-                Text("Copy needs Accessibility access to paste.")
+                Text(String(localized: "Copy needs Accessibility access to paste."))
                     .font(Tokens.caption)
                     .foregroundStyle(.secondary)
                 Button(String(localized: "Open Settings")) { openAccessibilitySettings() }
