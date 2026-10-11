@@ -108,12 +108,10 @@ final class ClipboardMonitorTests: XCTestCase {
         XCTAssertEqual(captured[0].representations.map(\.uti), ["public.png"])
     }
 
-    func testCapturesFiles() {
+    func testSkipsFiles() {
         pasteboard.putFiles([URL(fileURLWithPath: "/tmp/a.txt"), URL(fileURLWithPath: "/tmp/b.txt")])
         monitor.checkNow()
-        XCTAssertEqual(captured[0].kind, .file)
-        XCTAssertEqual(captured[0].plainText, "a.txt\nb.txt")
-        XCTAssertEqual(captured[0].representations.count, 2)
+        XCTAssertEqual(captured.count, 0, "files are never stored in history")
     }
 
     func testSkipsConcealed() {

@@ -59,15 +59,7 @@ public final class ClipboardMonitor {
                                 source: (bundleID: String?, name: String?)) -> CapturedItem? {
         let urls = pasteboard.fileURLs()
         if !urls.isEmpty {
-            let fullPaths = urls.map(\.path).joined(separator: "\n")
-            return capped(CapturedItem(
-                kind: .file,
-                plainText: urls.map(\.lastPathComponent).joined(separator: "\n"),
-                hashData: Data(fullPaths.utf8),
-                representations: urls.map {
-                    CapturedRepresentation(uti: "public.file-url", data: $0.dataRepresentation)
-                },
-                sourceBundleID: source.bundleID, sourceAppName: source.name))
+            return nil // 历史记录不存 files (用户决定)。
         }
 
         var imageReps: [CapturedRepresentation] = []

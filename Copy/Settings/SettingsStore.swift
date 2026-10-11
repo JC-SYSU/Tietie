@@ -318,8 +318,8 @@ final class SettingsStore {
         } else {
             retention = .unlimited
         }
-        fetchLinkPreviews = (defaults.object(forKey: Self.fetchLinkPreviewsKey) as? Bool) ?? true
-        recognizeImageText = (defaults.object(forKey: Self.recognizeImageTextKey) as? Bool) ?? true
+        fetchLinkPreviews = false
+        recognizeImageText = false
         hideDuringScreenSharing = (defaults.object(forKey: Self.hideDuringScreenSharingKey) as? Bool) ?? false
         favoritesEnabled = (defaults.object(forKey: Self.favoritesEnabledKey) as? Bool) ?? true
         floatingShelf = (defaults.object(forKey: Self.floatingShelfKey) as? Bool) ?? false
