@@ -203,23 +203,15 @@ final class AppCoordinator {
                 && viewModel.searchQuery.text.isEmpty: // cmd-V — paste the selection
                 viewModel.pasteSelection(plain: false)
                 return true
-            case 51 where event.modifierFlags.contains(.command): // cmd-delete
-                // Clears the search (all pills + text) when one is active; otherwise deletes
-                // the selected card.
+            case 51 where event.modifierFlags.contains(.command): // cmd-backspace — delete selected card
+                // When search is active: clears the search (all pills + text).
+                // When search is empty: deletes the selected card.
                 if !viewModel.searchQuery.isEmpty {
                     viewModel.clearSearch()
                 } else {
                     viewModel.deleteSelection()
                 }
                 return true
-            case 51 where shortcutModifiers.isEmpty: // backspace — delete selected card
-                // Search text and pills are handled above/by the field; only an empty
-                // search lets Backspace act on the card selection.
-                if viewModel.searchQuery.isEmpty {
-                    viewModel.deleteSelection()
-                    return true
-                }
-                return false
             case 14 where event.modifierFlags.contains(.command): // cmd-E — edit primary item
                 viewModel.beginEdit()
                 return true

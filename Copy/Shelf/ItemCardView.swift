@@ -250,6 +250,7 @@ struct ItemCardView: View {
             }
             Divider()
             Button(String(localized: "Delete"), role: .destructive, action: onDelete)
+                .keyboardShortcut(.delete, modifiers: .command)
         }
         .onDrag(dragProvider) { dragPreview }
         .modifier(CardClickGesture(onClick: onClick))
