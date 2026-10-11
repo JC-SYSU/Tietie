@@ -81,8 +81,10 @@ private struct GlassSurfaceModifier: ViewModifier {
     let corners: GlassSurfaceCorners
     @StateObject private var reduceTransparency = ReduceTransparencyObserver()
 
-    /// 原生内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
-    private static let innerShadow = Color.black.opacity(0.45)
+    /// 内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
+    private static let innerShadow = Color.black.opacity(0.2)
+    /// 外阴影: 面板投向下方的投影, 勾勒边界。
+    private static let outerShadow = Color.black.opacity(0.25)
 
     func body(content: Content) -> some View {
         Group {
@@ -97,9 +99,18 @@ private struct GlassSurfaceModifier: ViewModifier {
         // 压成不透明离屏层, 整个面板会渲染成一块黑。
         .overlay {
             glassShape
-                .strokeBorder(Self.innerShadow, lineWidth: 3)
-                .blur(radius: 5)
+                .strokeBorder(Self.innerShadow, lineWidth: 2)
+                .blur(radius: 3)
                 .clipShape(glassShape)
+                .allowsHitTesting(false)
+        }
+        // 外阴影: 必须作用在玻璃容器之外——容器内的 .shadow() 会触发离屏层变黑。
+        // 通过在容器下方放一个同形状的半透明层+模糊+向下偏移, 模拟投影效果。
+        .background {
+            glassShape
+                .fill(Self.outerShadow)
+                .blur(radius: 12)
+                .offset(y: 4)
                 .allowsHitTesting(false)
         }
     }
