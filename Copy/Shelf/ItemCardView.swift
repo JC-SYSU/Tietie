@@ -381,7 +381,14 @@ struct ItemCardView: View {
         if let hex = HexColor.normalized(item.plainText ?? "") {
             colorSwatchBody(hex)
         } else {
-            codeAwareBody(text: item.plainText ?? "", cap: 1_500)
+            // Only cap here (not in the cache key), so cards with >300 chars render a
+            // snippet: the full text is still in the item, searchable, and pasteable;
+            // only the displayed preview is short. 300 chars fit ~15 lines in the card
+            // (at 12pt, ~20 chars/line) — enough to preview, not so much that a long
+            // paste bogs the shelf (历史 avg ~8.5k/hit, max 120k, was killing the frame
+            // rate). The cache keyed by full text means switching to a query with
+            // shorter hits won't read stale long-text highlights.
+            codeAwareBody(text: String((item.plainText ?? "").prefix(300)), cap: 1_500)
                 .font(Tokens.cardBody)
                 .lineLimit(bodyLineLimit(standard: 11, compact: 6))
                 .multilineTextAlignment(.leading)

@@ -58,10 +58,10 @@ struct ShelfRootView: View {
         .background(Color.black.opacity(0.001).ignoresSafeArea())
         .glassSurface(corners: GlassSurfaceCorners())
         .clipShape(UnevenRoundedRectangle(
-            topLeadingRadius: 12,
-            bottomLeadingRadius: viewModel.settings.floatingShelf ? 12 : 0,
-            bottomTrailingRadius: viewModel.settings.floatingShelf ? 12 : 0,
-            topTrailingRadius: 12,
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: 0,
             style: .continuous
         ))
         // Drags onto the pinboard tabs (cards to file, tabs to reorder) are taken by the
