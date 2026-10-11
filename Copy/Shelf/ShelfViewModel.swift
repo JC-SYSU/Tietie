@@ -83,6 +83,12 @@ final class ShelfViewModel {
     private(set) var pageIndex = 0
     private(set) var pageCapacity = 6
     private(set) var lastFlipDirection = 0
+
+    /// 总页数 (至少 1 页)。
+    var pageCount: Int {
+        let capacity = max(1, pageCapacity)
+        return max(1, (items.count + capacity - 1) / capacity)
+    }
     @ObservationIgnored private var pageAccumulator: CGFloat = 0
     /// 最近一次量到的轨道视口宽度, 供分页容量重算。
     @ObservationIgnored private var viewportWidth: CGFloat = 0

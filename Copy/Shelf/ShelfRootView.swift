@@ -26,11 +26,6 @@ struct ShelfRootView: View {
         return !legendDismissed || viewModel.commandHeld
     }
 
-    private func dismissLegend() {
-        UserDefaults.standard.set(true, forKey: Self.legendDismissedKey)
-        withAnimation(.easeOut(duration: 0.15)) { legendDismissed = true }
-    }
-
     /// Reads `viewModel.accessibilityTrusted` rather than checking `AXIsProcessTrusted()`
     /// itself, since the shelf panel + this view are created once and reused for the
     /// app's lifetime — a one-time `.onAppear` read here would only ever reflect
@@ -52,7 +47,7 @@ struct ShelfRootView: View {
             Divider()
             ShelfItemsRow(viewModel: viewModel)
             if showsLegend {
-                KeyboardLegend(onDismiss: dismissLegend)
+                KeyboardLegend(pageIndex: viewModel.pageIndex, pageCount: viewModel.pageCount)
                     .transition(.opacity)
             }
         }
@@ -754,7 +749,8 @@ private struct ShelfEmptyState: View {
 /// path. Sized to fit the standard shelf's spare vertical space below the cards; hidden
 /// in compact mode and once dismissed (see `ShelfRootView.showsLegend`).
 private struct KeyboardLegend: View {
-    let onDismiss: () -> Void
+    let pageIndex: Int
+    let pageCount: Int
 
     var body: some View {
         HStack(spacing: 14) {
@@ -763,12 +759,22 @@ private struct KeyboardLegend: View {
             KeyHint(key: "⇧↩", label: "Plain text")
             KeyHint(key: "⌘⌫", label: "Delete")
             Spacer(minLength: 8)
-            IconButton(systemName: "xmark", fontSize: 9,
-                       size: CGSize(width: 22, height: 20), help: "Hide keyboard tips",
-                       action: onDismiss)
+            pageIndicator
         }
         .padding(.horizontal, Tokens.shelfPadding)
         .padding(.top, 4)
         .padding(.bottom, 11)
+    }
+
+    /// 翻页指示器: 替代原先的图例关闭按钮, 显示当前位置。
+    private var pageIndicator: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "rectangle.split.3x1")
+                .font(.system(size: 10, weight: .medium))
+            Text("第 \(pageIndex + 1) / \(pageCount) 页")
+                .font(.system(size: 11, weight: .medium))
+                .monospacedDigit()
+        }
+        .foregroundStyle(.secondary)
     }
 }
