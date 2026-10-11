@@ -56,9 +56,7 @@ struct ShelfRootView: View {
         // routeable, so without this a scroll starting on any dead pixel (header gaps,
         // legend strip, padding) fell through to the window behind the shelf.
         .background(Color.black.opacity(0.001).ignoresSafeArea())
-        .glassSurface(corners: viewModel.settings.floatingShelf
-            ? GlassSurfaceCorners(topLeading: 50, topTrailing: 50, bottomLeading: 12, bottomTrailing: 12)
-            : .top(50))
+        .glassSurface(corners: GlassSurfaceCorners())
         .clipShape(UnevenRoundedRectangle(
             topLeadingRadius: 12,
             bottomLeadingRadius: viewModel.settings.floatingShelf ? 12 : 0,

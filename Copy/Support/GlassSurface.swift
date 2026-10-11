@@ -83,8 +83,6 @@ private struct GlassSurfaceModifier: ViewModifier {
 
     /// 原生内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
     private static let innerShadow = Color.black.opacity(0.45)
-    /// 原生外阴影: 面板投向下方的投影, 勾勒边界。
-    private static let outerShadow = Color.black.opacity(0.35)
 
     func body(content: Content) -> some View {
         Group {
@@ -94,13 +92,16 @@ private struct GlassSurfaceModifier: ViewModifier {
                 content.background { VisualEffectMaterial(corners: corners) }
             }
         }
-        // 内阴影叠在形状边缘内侧, 不参与命中测试。
+        // 内阴影: 描边模糊后裁回形状内缘, 得到柔和的向内暗边; 不参与命中测试。
+        // 这里既不能用 .shadow(), 也不能用 .fill(.shadow(...))——两者都会把玻璃/材质
+        // 压成不透明离屏层, 整个面板会渲染成一块黑。
         .overlay {
             glassShape
-                .fill(.shadow(.inner(color: Self.innerShadow, radius: 10, x: 0, y: 2)))
+                .strokeBorder(Self.innerShadow, lineWidth: 3)
+                .blur(radius: 5)
+                .clipShape(glassShape)
                 .allowsHitTesting(false)
         }
-        .shadow(color: Self.outerShadow, radius: 18, x: 0, y: 8)
     }
 
     /// `UnevenRoundedRectangle`/`.rect(topLeadingRadius:...)` has shipped since
