@@ -184,15 +184,19 @@ public struct ItemStore {
     /// Set `favoritesFirst` to false for one bounded recency window, without changing marks.
     public func search(filter: SearchFilter, limit: Int = 100, favoritesFirst: Bool = true) throws -> [ClipItem] {
         let words = TextMatch.words(TextMatch.normalize(filter.text))
-        // The Swift match can't run in SQL, so a text query's bound has to happen while
-        // reading: stream the rows and stop once `limit` matches are in hand, rather than
-        // materializing and matching every prefiltered row. Without text there's no match
-        // to run, and SQL's own LIMIT already bounds the fetch.
-        let matchLimit = words.isEmpty ? nil : limit
+        // The LIKE prefilter is already an exact match for a word whose case SQLite folds
+        // the same way the Swift match would — plain ASCII (LIKE folds its case) and
+        // caseless CJK. Only a word carrying a non-ASCII cased letter (é, ü, …) can slip
+        // past the prefilter, so only then does the slower Swift re-match run. The common
+        // query therefore does no Swift matching at all, on any row.
+        let matchWords: [String]? = words.contains(where: TextMatch.prefilterNeedsUppercase) ? words : nil
+        // With text the fetch stops at `limit` matches while reading; without text,
+        // SQL's own LIMIT already bounds it.
+        let textLimit = words.isEmpty ? nil : limit
         if !favoritesFirst {
             let query = searchQuery(filter, words: words, isFavorite: nil, limit: limit)
             return try writer.read { db in
-                try collectMatches(db, query, words: words, limit: matchLimit)
+                try collectMatches(db, query, matchWords: matchWords, limit: textLimit)
             }
         }
         let favorites = searchQuery(filter, words: words, isFavorite: true, limit: nil)
@@ -200,23 +204,23 @@ public struct ItemStore {
         return try writer.read { db in
             // Favorites come first and in full (exempt from `limit`, as the shelf places
             // them); only the non-favorite rest is bounded.
-            try collectMatches(db, favorites, words: words, limit: nil)
-                + collectMatches(db, rest, words: words, limit: matchLimit)
+            try collectMatches(db, favorites, matchWords: matchWords, limit: nil)
+                + collectMatches(db, rest, matchWords: matchWords, limit: textLimit)
         }
     }
 
-    /// Streams a built query's rows, keeps the ones `TextMatch` accepts, and stops as
-    /// soon as `limit` matches are collected (`nil` = no bound). Reading stops early, so
-    /// a broad query costs the rows it actually needs, not every prefiltered row — the
-    /// difference between a snappy keystroke and matching all of a large candidate set.
+    /// Streams a built query's rows, keeps the ones `matchWords` accepts (`nil` = the
+    /// prefilter is authoritative, keep all), and stops as soon as `limit` are collected
+    /// (`nil` = no bound). Reading stops early, so a broad query costs the rows it
+    /// actually needs, not every prefiltered row.
     private func collectMatches(_ db: Database,
                                 _ query: (sql: String, arguments: [any DatabaseValueConvertible]),
-                                words: [String],
+                                matchWords: [String]?,
                                 limit: Int?) throws -> [ClipItem] {
         let cursor = try ClipItem.fetchCursor(db, sql: query.sql, arguments: StatementArguments(query.arguments))
         var results: [ClipItem] = []
         while let item = try cursor.next() {
-            guard words.isEmpty || TextMatch.matches(words, in: item) else { continue }
+            if let matchWords, !TextMatch.matches(matchWords, in: item) { continue }
             results.append(item)
             if let limit, results.count >= limit { break }
         }

@@ -80,27 +80,27 @@ struct GlassSurfaceCorners: Equatable {
 private struct GlassSurfaceModifier: ViewModifier {
     let corners: GlassSurfaceCorners
     @StateObject private var reduceTransparency = ReduceTransparencyObserver()
-    @Environment(\.colorScheme) private var colorScheme
 
-    /// In dark appearance the glass is dimmed so text on it reads against anything
-    /// behind the shelf — Liquid Glass over a bright window otherwise washes out the
-    /// secondary labels (tabs, badges, timestamps). Light glass is left as is: it is
-    /// already a light surface under dark text.
-    private var isDark: Bool { colorScheme == .dark }
-    /// 深色外观下压暗玻璃用的黑罩。数值是不透明度 0–1, 越高越覆盖背景。
-    private static let darkScrim = Color.black.opacity(0.5)
+    /// 原生内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
+    private static let innerShadow = Color.black.opacity(0.45)
+    /// 原生外阴影: 面板投向下方的投影, 勾勒边界。
+    private static let outerShadow = Color.black.opacity(0.35)
 
     func body(content: Content) -> some View {
-        if #available(macOS 26, *), !reduceTransparency.isReduced {
-            content.glassEffect(isDark ? .regular.tint(Self.darkScrim) : .regular, in: glassShape)
-        } else {
-            content.background {
-                ZStack {
-                    VisualEffectMaterial(corners: corners)
-                    if isDark { glassShape.fill(Self.darkScrim) }
-                }
+        Group {
+            if #available(macOS 26, *), !reduceTransparency.isReduced {
+                content.glassEffect(.regular, in: glassShape)
+            } else {
+                content.background { VisualEffectMaterial(corners: corners) }
             }
         }
+        // 内阴影叠在形状边缘内侧, 不参与命中测试。
+        .overlay {
+            glassShape
+                .fill(.shadow(.inner(color: Self.innerShadow, radius: 10, x: 0, y: 2)))
+                .allowsHitTesting(false)
+        }
+        .shadow(color: Self.outerShadow, radius: 18, x: 0, y: 8)
     }
 
     /// `UnevenRoundedRectangle`/`.rect(topLeadingRadius:...)` has shipped since
