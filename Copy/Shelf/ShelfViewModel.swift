@@ -802,6 +802,11 @@ final class ShelfViewModel {
 
     // MARK: - Pinboard actions passthrough
 
+    /// 新建收藏板的自动主题色: 从多巴胺色板按现有数量轮转, 连续新建不重色。
+    var nextPinboardTint: String {
+        Tokens.dopaminePalette[pinboards.count % Tokens.dopaminePalette.count].hex
+    }
+
     func createPinboard(name: String, symbol: String, emoji: String? = nil, tint: String = "") {
         do {
             try pinboardStore.create(name: name, symbol: symbol, emoji: emoji, tint: tint)
@@ -872,10 +877,15 @@ final class ShelfViewModel {
         }
     }
 
+    /// 收藏板成员变动计数: 卡片顶部的归属色条靠它感知「加入/移出收藏板」——
+    /// 成员关系变化不改动 items 数组, 单观察 items 察觉不到。
+    private(set) var pinboardMembershipVersion = 0
+
     func addItem(_ item: ClipItem, toPinboard id: Int64) {
         guard let itemID = item.id else { return }
         do {
             try pinboardStore.add(itemID: itemID, to: id)
+            pinboardMembershipVersion += 1
         } catch {
             NSLog("Copy: failed to add item to pinboard: \(error)")
             HUD.show("Couldn't complete that")
@@ -886,6 +896,7 @@ final class ShelfViewModel {
         guard let itemID = item.id else { return }
         do {
             try pinboardStore.remove(itemID: itemID, from: id)
+            pinboardMembershipVersion += 1
             pushUndo(.removedFromPinboard(itemID: itemID, pinboardID: id))
         } catch {
             NSLog("Copy: failed to remove item from pinboard: \(error)")

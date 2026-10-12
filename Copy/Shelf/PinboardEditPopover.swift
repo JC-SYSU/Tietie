@@ -120,18 +120,11 @@ struct PinboardEditPopover: View {
         }
     }
 
-    /// A curated, system-ish palette. Empty hex means "no color".
-    static let colorOptions: [(name: String, hex: String)] = [
-        ("None", ""),
-        ("Red", "FF3B30"),
-        ("Orange", "FF9500"),
-        ("Yellow", "FFCC00"),
-        ("Green", "34C759"),
-        ("Blue", "007AFF"),
-        ("Purple", "AF52DE"),
-        ("Pink", "FF2D55"),
-        ("Graphite", "8E8E93"),
-    ]
+    /// 预设色点 = 多巴胺色板 (与新建时自动分配的颜色同源, 见 `Tokens.dopaminePalette`)
+    /// 加一个 "None"。Empty hex means "no color".
+    static var colorOptions: [(name: String, hex: String)] {
+        [("None", "")] + Tokens.dopaminePalette
+    }
 
     let mode: Mode
     let onCommit: (String, String, String?, String) -> Void
@@ -144,7 +137,9 @@ struct PinboardEditPopover: View {
     @State private var emojiCategoryIndex = 0
     @FocusState private var nameFocused: Bool
 
-    init(mode: Mode, onCommit: @escaping (String, String, String?, String) -> Void) {
+    /// `initialTint`: 新建时预填的主题色 (调用方从多巴胺色板轮转取), rename 模式忽略。
+    init(mode: Mode, initialTint: String = "007AFF",
+         onCommit: @escaping (String, String, String?, String) -> Void) {
         self.mode = mode
         self.onCommit = onCommit
         switch mode {
@@ -152,9 +147,10 @@ struct PinboardEditPopover: View {
             _name = State(initialValue: "")
             _symbol = State(initialValue: "pin")
             _emoji = State(initialValue: nil)
-            // New pinboards get a color by default (Blue) since the color is now their
-            // primary identity on the tabs; the user can change or clear it below.
-            _tint = State(initialValue: "007AFF")
+            // New pinboards get a color by default (auto-assigned from the dopamine
+            // palette by the caller) since the color is now their primary identity on
+            // the tabs; the user can change or clear it below.
+            _tint = State(initialValue: initialTint)
         case .rename(let pinboard):
             _name = State(initialValue: pinboard.name)
             _symbol = State(initialValue: pinboard.symbol)

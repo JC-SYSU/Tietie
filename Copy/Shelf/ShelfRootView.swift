@@ -167,13 +167,19 @@ private struct ShelfHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        // 三段式头部: 标签栏水平居中, 搜索框 + 按钮固定右侧。收藏板很多时标签栏
+        // 会从中间向两侧生长, 挤到搜索框再加限宽滚动 (当前不过度设计)。
+        ZStack {
             ShelfTabs(viewModel: viewModel)
-            Spacer(minLength: 12)
-            SearchTokenField(viewModel: viewModel, placeholder: searchPlaceholder, focused: $searchFocused)
-                .frame(maxWidth: 360)
-            PasteStackButton(viewModel: viewModel)
-            DrawerMenu(viewModel: viewModel)
+        }
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 10) {
+                SearchTokenField(viewModel: viewModel, placeholder: searchPlaceholder, focused: $searchFocused)
+                    .frame(maxWidth: 220)
+                PasteStackButton(viewModel: viewModel)
+                DrawerMenu(viewModel: viewModel)
+            }
         }
         .padding(.horizontal, Tokens.shelfPadding)
         .padding(.vertical, 8)
@@ -205,8 +211,8 @@ private struct ShelfHeader: View {
 }
 
 /// Header control that opens the Paste Stack palette (`onTogglePasteStack`), tinting to the
-/// accent while the stack is active. While ⌘ is held it reveals the stack's rebindable
-/// hotkey as a `KeyCap`, matching the shelf's other ⌘-hold hints (the card number badges).
+/// accent while the stack is active. While ⌥ is held it reveals the stack's rebindable
+/// hotkey as a `KeyCap`, matching the shelf's other ⌥-hold hints (the tab number badges).
 private struct PasteStackButton: View {
     @Bindable var viewModel: ShelfViewModel
 
@@ -301,8 +307,8 @@ private struct ShelfTabs: View {
     var body: some View {
         HStack(spacing: 4) {
             TabPill(
-                label: "History",
-                symbol: "clock",
+                label: String(localized: "All"),
+                symbol: "tray.full",
                 isSelected: viewModel.tab == .history,
                 shortcutHint: viewModel.optionHeld ? "1" : nil,
                 action: { viewModel.selectTab(.history) }
@@ -318,7 +324,7 @@ private struct ShelfTabs: View {
                     isDropTargeted: pinboard.id != nil && viewModel.dropTargetedPinboardID == pinboard.id,
                     reorderIndicatorEdge: viewModel.reorderTargetedPinboardID == pinboard.id
                         ? (viewModel.reorderPlacesAfterTarget ? .trailing : .leading) : nil,
-                    // ⌥1 is History, so pinboards start at ⌥2; only the first eight get a
+                    // ⌥1 is All, so pinboards start at ⌥2; only the first eight get a
                     // hint (⌥9 is the ceiling of the number-key routing).
                     shortcutHint: (viewModel.optionHeld && offset + 2 <= 9) ? "\(offset + 2)" : nil,
                     action: {
@@ -385,7 +391,8 @@ private struct ShelfTabs: View {
                 createPresented = true
             }
             .popover(isPresented: $createPresented) {
-                PinboardEditPopover(mode: .create) { name, symbol, emoji, tint in
+                // 新建弹层预填自动主题色 (多巴胺色板轮转), 用户仍可改。
+                PinboardEditPopover(mode: .create, initialTint: viewModel.nextPinboardTint) { name, symbol, emoji, tint in
                     viewModel.createPinboard(name: name, symbol: symbol, emoji: emoji, tint: tint)
                 }
             }
@@ -427,7 +434,7 @@ private struct TabPill: View {
     let label: String
     let symbol: String
     /// A user-chosen emoji shown in place of the SF Symbol, when set. `nil`/untinted
-    /// pinboards (and the History tab) render exactly as before this feature.
+    /// pinboards (and the All tab) render exactly as before this feature.
     var emoji: String? = nil
     /// A user-chosen hex color (e.g. "FF3B30"); empty means no color identity.
     var tint: String = ""
@@ -542,6 +549,15 @@ private struct ShelfItemsRow: View {
         return viewModel.items[start..<end].enumerated().map { (index: start + $0.offset, item: $0.element) }
     }
 
+    /// 卡片所属的第一个收藏板主题色 (按标签顺序取第一个), 供顶部归属色条;
+    /// 不属于任何收藏板时返回 nil。读取成员版本计数, 加入/移出时触发重算。
+    private func firstPinboardTint(for item: ClipItem) -> String? {
+        _ = viewModel.pinboardMembershipVersion
+        guard let itemID = item.id else { return nil }
+        guard let ids = try? viewModel.pinboardStore.pinboardIDs(forItemID: itemID), !ids.isEmpty else { return nil }
+        return viewModel.pinboards.first { $0.id.map { ids.contains($0) } ?? false }?.tint
+    }
+
     /// 翻页容器: 无滚动视图, 每页固定渲染 `pageCapacity` 张卡, 翻页由状态机切片驱动。
     private var pageContent: some View {
         HStack(spacing: Tokens.cardGap(compact: compact)) {
@@ -558,6 +574,7 @@ private struct ShelfItemsRow: View {
                     isInlineRenaming: viewModel.inlineRenamingItemID == pair.item.id,
                     store: viewModel.store,
                     pinboards: viewModel.pinboards,
+                    pinboardTint: firstPinboardTint(for: pair.item),
                     currentPinboardID: currentPinboardID,
                     favoritesEnabled: viewModel.settings.favoritesEnabled,
                     compact: compact,
@@ -619,7 +636,7 @@ private struct ShelfItemsRow: View {
         }
         .padding(.horizontal, Tokens.shelfPadding(compact: compact))
         .padding(.vertical, compact ? 10 : 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         // Dead-pixel hit-test floor: 让面板任意位置的滚轮/点击都被本层认领。
         .background(Color.black.opacity(0.001))
         .coordinateSpace(name: CardSweep.contentSpace)

@@ -10,6 +10,8 @@ struct ItemCardView: View {
     let isInlineRenaming: Bool
     let store: ItemStore
     let pinboards: [Pinboard]
+    /// 卡片所属收藏板的主题色 (取标签顺序第一个; 无归属或该板无色则 nil), 顶部色条用。
+    var pinboardTint: String? = nil
     let currentPinboardID: Int64?
     /// Compact shelf mode (`SettingsStore.compactShelf`, threaded from `ShelfRootView`):
     /// smaller card frame + tighter line limits so more cards fit on screen at once.
@@ -132,6 +134,14 @@ struct ItemCardView: View {
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
+        // 收藏板归属色条: 顶部 3pt 主题色, 标明卡片归档在哪个收藏板 (描边之下, 保持边缘干净)。
+        .overlay(alignment: .top) {
+            if let pinboardTint, !pinboardTint.isEmpty {
+                Rectangle()
+                    .fill(Tokens.color(fromHex: pinboardTint))
+                    .frame(height: 3)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
                 .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor),

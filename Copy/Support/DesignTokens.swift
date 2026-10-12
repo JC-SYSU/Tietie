@@ -24,6 +24,20 @@ enum Tokens {
     static func cardGap(compact: Bool) -> CGFloat { compact ? compactCardGap : cardGap }
     static func shelfPadding(compact: Bool) -> CGFloat { compact ? compactShelfPadding : shelfPadding }
 
+    /// 多巴胺色板: 新建收藏板自动轮转分配主题色的来源, 编辑弹层的预设色点同源。
+    /// 存不带 # 的 hex, 与 `Pinboard.tint` 的存储格式一致。
+    static let dopaminePalette: [(name: String, hex: String)] = [
+        ("Coral", "FF6B6B"),     // 珊瑚红
+        ("Tangerine", "FF9F43"), // 橘
+        ("Sunshine", "FFD93D"),  // 柠檬黄
+        ("Leaf", "6BCB77"),      // 叶绿
+        ("Mint", "06D6A0"),      // 薄荷青
+        ("Sky", "4CC9F0"),       // 天蓝
+        ("Iris", "5E60CE"),      // 鸢尾蓝紫
+        ("Orchid", "9B5DE5"),    // 兰紫
+        ("Fuchsia", "F15BB5"),   // 品红
+    ]
+
     /// Regular clipboard prose uses the native system face; code keeps monospace.
     static let cardBody = Font.system(size: 12)
     static let bodyMono = Font.system(size: 11, design: .monospaced)
