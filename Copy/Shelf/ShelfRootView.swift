@@ -643,12 +643,72 @@ private struct ShelfItemsRow: View {
         ))
     }
 
+    /// 渐隐带宽度: 该方向还有页面时, 卡片在面板边缘淡出 24pt, 提示可翻页。
+    private static let edgeFadeWidth: CGFloat = 24
+
     var body: some View {
         if viewModel.items.isEmpty {
             ShelfEmptyState(viewModel: viewModel)
         } else {
+            // 遮罩与箭头包在 pageContent (含 .id 翻页过渡) 外层: 翻页时卡片在
+            // 固定的渐隐带下滑动, 箭头保持原位不随页面移动。
             pageContent
+                .mask {
+                    HStack(spacing: 0) {
+                        if viewModel.pageIndex > 0 {
+                            LinearGradient(colors: [.black.opacity(0), .black],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: Self.edgeFadeWidth)
+                        }
+                        Rectangle().fill(.black)
+                        if viewModel.pageIndex < viewModel.pageCount - 1 {
+                            LinearGradient(colors: [.black, .black.opacity(0)],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: Self.edgeFadeWidth)
+                        }
+                    }
+                }
+                .overlay(alignment: .leading) { pageEdgeControl(-1) }
+                .overlay(alignment: .trailing) { pageEdgeControl(1) }
         }
+    }
+
+    /// 该方向还有页面时渲染边缘箭头 (方向 -1 = 上一页, +1 = 下一页), 否则不占位。
+    @ViewBuilder
+    private func pageEdgeControl(_ direction: Int) -> some View {
+        let hasPage = direction < 0 ? viewModel.pageIndex > 0 : viewModel.pageIndex < viewModel.pageCount - 1
+        if hasPage {
+            PageEdgeButton(direction: direction) {
+                viewModel.flipPage(direction: direction)
+            }
+        }
+    }
+}
+
+/// 翻页边缘引导: 渐隐带上的小箭头, hover 微亮, 点击翻一页。
+/// 与滚轮翻页共用 `flipPage`, 滑动动画与触感反馈保持一致。
+private struct PageEdgeButton: View {
+    let direction: Int
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary.opacity(hovering ? 0.9 : 0.5))
+                .frame(width: 24, height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(.primary.opacity(hovering ? 0.08 : 0.0))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help(direction < 0 ? Text("Previous page") : Text("Next page"))
+        .padding(.horizontal, 2)
     }
 }
 

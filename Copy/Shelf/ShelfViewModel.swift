@@ -559,7 +559,9 @@ final class ShelfViewModel {
         }
     }
 
-    private func flipPage(direction: Int) {
+    /// 翻一页 (方向 ±1)。滚动手势与边缘箭头点击共用这一个入口, 保证滑动动画方向、
+    /// 触感反馈和新页首卡选中行为完全一致。点击路径有意绕过滚动手势的冷却计时。
+    func flipPage(direction: Int) {
         let capacity = max(1, pageCapacity)
         let maxPage = max(0, (items.count + capacity - 1) / capacity - 1)
         guard direction != 0, maxPage > 0 else { return }
