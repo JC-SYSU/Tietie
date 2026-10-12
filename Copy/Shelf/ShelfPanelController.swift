@@ -216,6 +216,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     private var floatingShelf: Bool
     private var compactShelf: Bool
     private var theme: ShelfTheme
+    private var screenChangeObserver: NSObjectProtocol?
 
     init(hideDuringScreenSharing: Bool, compactShelf: Bool, theme: ShelfTheme,
          floatingShelf: Bool, makeContent: @escaping () -> NSView) {
@@ -224,6 +225,24 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         self.theme = theme
         self.floatingShelf = floatingShelf
         self.makeContent = makeContent
+        super.init()
+        // 显示器参数变化 (插拔外接屏/主副屏切换) 时, AppKit 只把窗口挪到剩余屏幕、
+        // 不重设尺寸, 旧屏宽度会让卡片行在新屏上溢出被裁。这里按鼠标所在屏重取帧,
+        // SwiftUI 的几何回调随之触发, 每页卡片数自动重算。
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.resizeToMouseScreen()
+            }
+        }
+    }
+
+    deinit {
+        if let screenChangeObserver {
+            NotificationCenter.default.removeObserver(screenChangeObserver)
+        }
     }
 
     /// Updates existing shelf and modal windows; nil appearance follows macOS.
@@ -253,7 +272,12 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// mirrors `setHideDuringScreenSharing`'s live-update shape above.
     func setCompactShelf(_ compact: Bool) {
         compactShelf = compact
-        guard isVisible, let panel,
+        resizeToMouseScreen()
+    }
+
+    /// 按当前鼠标所在屏重设可见面板的宽高。设置变化与显示器切换共用。
+    private func resizeToMouseScreen() {
+        guard isVisible, let panel, !isHiding,
               let screen = NSScreen.screens.first(where: {
                   NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
               }) ?? NSScreen.main else { return }
