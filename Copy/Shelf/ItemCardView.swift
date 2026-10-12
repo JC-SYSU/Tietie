@@ -20,7 +20,7 @@ struct ItemCardView: View {
     var searchQuery: String = ""
     /// Briefly true after a "Show in History" jump lands on this card — draws an accent ring.
     var isFlashing: Bool = false
-    /// The card's ⌥-digit paste number (1-9), shown as a badge while ⌥ is held; `nil` hides it.
+    /// The card's ⌘-digit paste number (1-9), shown as a badge while ⌘ is held; `nil` hides it.
     var pasteNumber: Int? = nil
     /// Whether the "Show in History" context item applies (a search/filter is active, or the
     /// card is on a pinboard tab) — hidden in the plain History browse where it's a no-op.
@@ -145,8 +145,8 @@ struct ItemCardView: View {
                 .opacity(isFlashing ? 1 : 0)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: isFlashing)
         )
-        // ⌥-digit paste hint: a numbered badge shown while ⌥ is held, so users discover that
-        // ⌥1-9 pastes the Nth card.
+        // ⌘-digit paste hint: a numbered badge shown while ⌘ is held, so users discover that
+        // ⌘1-9 pastes the Nth card.
         .overlay(alignment: .topLeading) {
             if let pasteNumber {
                 Text("\(pasteNumber)")

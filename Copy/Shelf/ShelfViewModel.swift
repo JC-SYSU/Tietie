@@ -108,12 +108,13 @@ final class ShelfViewModel {
     var creatingItem = false
     /// Presents the keyboard-and-tips cheat sheet (reached from the drawer menu).
     var showingTips = false
-    /// True while the ⌘ key is held with the shelf open; reveals the keyboard legend and
-    /// the ⌘-number hints on pinboard tabs. Driven by a flags-changed monitor in
-    /// `ShelfPanelController` (wired in `AppCoordinator`).
+    /// True while the ⌘ key is held with the shelf open; reveals the ⌘-digit paste
+    /// number on each card. Driven by a flags-changed monitor in `ShelfPanelController`
+    /// (wired in `AppCoordinator`).
     var commandHeld = false
-    /// True while ⌥ is held with the shelf open; reveals the ⌥-digit paste number on each
-    /// card. Driven by the same flags-changed monitor as `commandHeld`.
+    /// True while ⌥ is held with the shelf open; reveals the keyboard legend and the
+    /// ⌥-number hints on pinboard tabs. Driven by the same flags-changed monitor as
+    /// `commandHeld`.
     var optionHeld = false
     /// The uuid of the card the pointer is currently over, so a force-click can act on
     /// exactly the card under the cursor (set by `ItemCardView`'s hover callback).

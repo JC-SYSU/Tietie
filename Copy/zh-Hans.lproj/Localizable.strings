@@ -182,7 +182,7 @@
 "Open or hide Copy" = "打开或隐藏 Copy";
 "Paste the selected card" = "粘贴选中的卡片";
 "Paste as plain text" = "粘贴为纯文本";
-"Paste the Nth card (hold ⌥ to see numbers)" = "粘贴第 N 张卡片（按住 ⌥ 查看编号）";
+"Paste the Nth card (hold ⌘ to see numbers)" = "粘贴第 N 张卡片（按住 ⌘ 查看编号）";
 "Preview the selected card" = "预览选中的卡片";
 "Open a link or file" = "打开链接或文件";
 "Search & navigate" = "搜索和导航";

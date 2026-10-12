@@ -138,9 +138,9 @@ final class AppCoordinator {
                 viewModel.focusSearchRequested = true
                 return true
             }
-            // ⌘1 → history tab, ⌘2...⌘9 → nth pinboard. Checked before keyCode routing
+            // ⌥1 → history tab, ⌥2...⌥9 → nth pinboard. Checked before keyCode routing
             // so the digit keys never fall through to other handlers.
-            if event.modifierFlags.contains(.command),
+            if event.modifierFlags.contains(.option),
                let chars = event.charactersIgnoringModifiers, chars.count == 1,
                let digit = chars.first, let digitValue = digit.wholeNumberValue,
                (1...9).contains(digitValue) {
@@ -154,12 +154,12 @@ final class AppCoordinator {
                 }
                 return true
             }
-            // ⌥-digit 1-9 pastes the Nth visible card directly. It's on Option (not a bare
+            // ⌘-digit 1-9 pastes the Nth visible card directly. It's on Command (not a bare
             // digit) so plain numbers type into the always-focused search field; holding
-            // Option reveals the paste number on each card (`optionHeld`). ⌘-digit tab
+            // Command reveals the paste number on each card (`commandHeld`). ⌥-digit tab
             // switching is handled above and returns before here, so it never collides.
-            let allowsDigitQuickPaste = event.modifierFlags.contains(.option)
-                && !event.modifierFlags.contains(.command)
+            let allowsDigitQuickPaste = event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.option)
                 && !event.modifierFlags.contains(.control)
             let pasteVisible: (Int) -> Void = { index in
                 guard viewModel.items.indices.contains(index) else { return }
@@ -189,7 +189,7 @@ final class AppCoordinator {
                 viewModel.pasteSelection(plain: !event.modifierFlags.intersection([.option, .shift]).isEmpty)
                 return true
             // Both guard on an empty search field. The shelf keeps that field focused at
-            // all times (see the ⌥-digit note above), so an unguarded ⌘V would take the
+            // all times (see the ⌘-digit note above), so an unguarded ⌘V would take the
             // one key a screener needs to paste a search term in, and an unguarded ⌘C
             // would take copying it back out. With text in the field these fall to
             // `default` and the field handles them, exactly as Backspace does below.

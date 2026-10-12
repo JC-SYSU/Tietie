@@ -20,10 +20,10 @@ struct ShelfRootView: View {
 
     /// The legend teaches the keyboard path, so it earns its slim strip when there are
     /// cards to act on and the shelf is at full height (compact mode trades this away for
-    /// density). Holding ⌘ re-summons it even after it's been dismissed.
+    /// density). Holding ⌥ re-summons it even after it's been dismissed.
     private var showsLegend: Bool {
         guard !viewModel.items.isEmpty, !viewModel.settings.compactShelf else { return false }
-        return !legendDismissed || viewModel.commandHeld
+        return !legendDismissed || viewModel.optionHeld
     }
 
     /// Reads `viewModel.accessibilityTrusted` rather than checking `AXIsProcessTrusted()`
@@ -222,12 +222,12 @@ private struct PasteStackButton: View {
                        help: "Paste Stack (\(hotkey))") {
                 viewModel.onTogglePasteStack?()
             }
-            if viewModel.commandHeld {
+            if viewModel.optionHeld {
                 KeyCap(text: hotkey)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: viewModel.commandHeld)
+        .animation(.easeOut(duration: 0.12), value: viewModel.optionHeld)
     }
 }
 
@@ -304,7 +304,7 @@ private struct ShelfTabs: View {
                 label: "History",
                 symbol: "clock",
                 isSelected: viewModel.tab == .history,
-                shortcutHint: viewModel.commandHeld ? "1" : nil,
+                shortcutHint: viewModel.optionHeld ? "1" : nil,
                 action: { viewModel.selectTab(.history) }
             )
             ForEach(Array(viewModel.pinboards.enumerated()), id: \.element.id) { offset, pinboard in
@@ -318,9 +318,9 @@ private struct ShelfTabs: View {
                     isDropTargeted: pinboard.id != nil && viewModel.dropTargetedPinboardID == pinboard.id,
                     reorderIndicatorEdge: viewModel.reorderTargetedPinboardID == pinboard.id
                         ? (viewModel.reorderPlacesAfterTarget ? .trailing : .leading) : nil,
-                    // ⌘1 is History, so pinboards start at ⌘2; only the first eight get a
-                    // hint (⌘9 is the ceiling of the number-key routing).
-                    shortcutHint: (viewModel.commandHeld && offset + 2 <= 9) ? "\(offset + 2)" : nil,
+                    // ⌥1 is History, so pinboards start at ⌥2; only the first eight get a
+                    // hint (⌥9 is the ceiling of the number-key routing).
+                    shortcutHint: (viewModel.optionHeld && offset + 2 <= 9) ? "\(offset + 2)" : nil,
                     action: {
                         guard let id = pinboard.id else { return }
                         // Clicking the already-selected pinboard opens its editor; otherwise
@@ -533,7 +533,7 @@ private struct ShelfItemsRow: View {
     /// immediately — no separate change-hook plumbing needed on the SwiftUI side.
     private var compact: Bool { viewModel.settings.compactShelf }
 
-    /// 当前页的卡片切片 (携带全列表下标, 供收藏分隔线与 ⌥数字粘贴编号使用)。
+    /// 当前页的卡片切片 (携带全列表下标, 供收藏分隔线与 ⌘数字粘贴编号使用)。
     private var pageItems: [(index: Int, item: ClipItem)] {
         let capacity = max(1, viewModel.pageCapacity)
         guard !viewModel.items.isEmpty else { return [] }
@@ -563,7 +563,7 @@ private struct ShelfItemsRow: View {
                     compact: compact,
                     searchQuery: viewModel.searchQuery.text,
                     isFlashing: viewModel.flashItemID == pair.item.uuid,
-                    pasteNumber: (viewModel.optionHeld && pair.index < 9) ? pair.index + 1 : nil,
+                    pasteNumber: (viewModel.commandHeld && pair.index < 9) ? pair.index + 1 : nil,
                     canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
                     onClick: { modifiers in viewModel.handleCardClick(pair.item, modifiers: modifiers) },
                     onHoverChanged: { hovering in
