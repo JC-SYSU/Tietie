@@ -133,8 +133,9 @@ struct ItemCardView: View {
                 }
             }
         )
-        .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
-        // 收藏板归属色条: 顶部 3pt 主题色, 标明卡片归档在哪个收藏板 (描边之下, 保持边缘干净)。
+        // 收藏板归属色条: 顶部 3pt 主题色, 标明卡片归档在哪个收藏板。必须在 clipShape
+        // 之前 (clipShape 只裁切它以下的内容), 色条才会随卡片圆角被裁, 不在顶部两角
+        // 露出方角。
         .overlay(alignment: .top) {
             if let pinboardTint, !pinboardTint.isEmpty {
                 Rectangle()
@@ -142,6 +143,7 @@ struct ItemCardView: View {
                     .frame(height: 3)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
                 .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
