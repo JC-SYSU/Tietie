@@ -131,6 +131,25 @@ final class ClipboardMonitorTests: XCTestCase {
         XCTAssertEqual(captured[0].kind, .image)
     }
 
+    /// macOS 截图、浏览器/相册复制照片的真实形状: 位图 + HTML 壳 (<img> 包装),
+    /// 没有任何纯文本。照片是本体, 必须按图片收 (5156db6 曾把这类整条漏收)。
+    func testImageWithHTMLWrapperAndNoTextCapturesAsImage() {
+        pasteboard.putImage(Data([0x89, 0x50]))
+        pasteboard.typeIDs = ["public.png", "public.html", "public.tiff"]
+        pasteboard.dataByUTI = ["public.html": Data("<img>".utf8)]
+        monitor.checkNow()
+        XCTAssertEqual(captured[0].kind, .image)
+    }
+
+    /// 空串纯文本视同没有文本: 位图 + HTML + 空串仍是图片。
+    func testImageWithEmptyTextAndHTMLCapturesAsImage() {
+        pasteboard.putText("")
+        pasteboard.typeIDs = ["public.png", "public.html", "public.utf8-plain-text"]
+        pasteboard.dataByUTI = ["public.html": Data("<img>".utf8)]
+        monitor.checkNow()
+        XCTAssertEqual(captured[0].kind, .image)
+    }
+
     func testSkipsFiles() {
         pasteboard.putFiles([URL(fileURLWithPath: "/tmp/a.txt"), URL(fileURLWithPath: "/tmp/b.txt")])
         monitor.checkNow()

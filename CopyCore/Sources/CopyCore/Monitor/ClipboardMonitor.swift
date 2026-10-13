@@ -68,14 +68,18 @@ public final class ClipboardMonitor {
                 imageReps.append(CapturedRepresentation(uti: imageUTI, data: data))
             }
         }
-        // Office 套件 (PowerPoint/Word/Excel) 复制文本时会把选区位图作为 fallback 一起
-        // 放上剪贴板 (RTF/HTML/纯文本俱全)。此时文本才是用户复制的本体, 位图只是给
-        // 不认富文本的应用兜底——按文本路径收录并丢弃位图, 否则从 Office 复制的文本
-        // 会被存成图片、粘贴出来也是图 (用户报告)。没有富文本格式的裸位图仍按图片收
-        // (浏览器"复制图片"不带 RTF/HTML, 不受影响)。
+        // 文本本体: 空串视同没有。
+        let text = pasteboard.string().flatMap { $0.isEmpty ? nil : $0 }
         let hasRichText = pasteboard.typeIdentifiers().contains("public.rtf")
             || pasteboard.typeIdentifiers().contains("public.html")
-        if !imageReps.isEmpty, !hasRichText {
+        // Office 套件复制文本时附带选区位图作 fallback (位图+RTF/HTML/纯文本俱全):
+        // 富文本与可用文本同时在场, 文本才是复制的本体 → 按文本路径收录并丢弃位图,
+        // 否则从 Office 复制的文本会被存成图片、粘贴出来也是图 (用户报告)。
+        // 仅「有富文本格式」不构成走文本路径的理由——macOS 截图、浏览器/相册复制
+        // 照片是「位图+HTML 壳、没有任何纯文本」(实测 screencapture 即如此), 那个
+        // HTML 只是 <img> 包装, 照片才是本体, 必须按图片收 (5156db6 按「有 HTML 即
+        // 文本」判定, 把这类照片整条漏收, 用户报告)。
+        if !imageReps.isEmpty, text == nil || !hasRichText {
             return capped(CapturedItem(
                 kind: .image, plainText: "Image", hashData: imageReps[0].data,
                 representations: imageReps,
@@ -90,7 +94,7 @@ public final class ClipboardMonitor {
                 sourceBundleID: source.bundleID, sourceAppName: source.name))
         }
 
-        guard let text = pasteboard.string(), !text.isEmpty else { return nil }
+        guard let text else { return nil }
         var kind = ItemKind.forText(text)
         // A standalone hex color copied as text ("#4C9DFF" or bare "4C9DFF") is a color, so
         // it swatches and matches the Color filter — see `HexColor.isColorText`.
