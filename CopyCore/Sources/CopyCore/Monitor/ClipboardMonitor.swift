@@ -68,7 +68,14 @@ public final class ClipboardMonitor {
                 imageReps.append(CapturedRepresentation(uti: imageUTI, data: data))
             }
         }
-        if !imageReps.isEmpty {
+        // Office 套件 (PowerPoint/Word/Excel) 复制文本时会把选区位图作为 fallback 一起
+        // 放上剪贴板 (RTF/HTML/纯文本俱全)。此时文本才是用户复制的本体, 位图只是给
+        // 不认富文本的应用兜底——按文本路径收录并丢弃位图, 否则从 Office 复制的文本
+        // 会被存成图片、粘贴出来也是图 (用户报告)。没有富文本格式的裸位图仍按图片收
+        // (浏览器"复制图片"不带 RTF/HTML, 不受影响)。
+        let hasRichText = pasteboard.typeIdentifiers().contains("public.rtf")
+            || pasteboard.typeIdentifiers().contains("public.html")
+        if !imageReps.isEmpty, !hasRichText {
             return capped(CapturedItem(
                 kind: .image, plainText: "Image", hashData: imageReps[0].data,
                 representations: imageReps,

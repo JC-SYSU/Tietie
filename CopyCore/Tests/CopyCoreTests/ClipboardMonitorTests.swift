@@ -108,6 +108,29 @@ final class ClipboardMonitorTests: XCTestCase {
         XCTAssertEqual(captured[0].representations.map(\.uti), ["public.png"])
     }
 
+    /// Office 复制文本时附带的选区位图 (PNG) 是富文本的兜底, 不是用户复制的本体:
+    /// 有 RTF/HTML 时按文本收录并丢弃位图, 否则从 Office 复制的文字粘出来是图片。
+    func testTextWithImageFallbackCapturesAsRichText() {
+        pasteboard.putText("styled")
+        pasteboard.typeIDs = ["public.png", "public.rtf", "public.utf8-plain-text"]
+        pasteboard.dataByUTI = ["public.png": Data([0x89, 0x50]),
+                                "public.rtf": Data("rtf-bytes".utf8)]
+        monitor.checkNow()
+        XCTAssertEqual(captured[0].kind, .richText)
+        XCTAssertEqual(captured[0].plainText, "styled")
+        XCTAssertFalse(captured[0].representations.contains { $0.uti == "public.png" })
+        XCTAssertEqual(captured[0].representations.map(\.uti), ["public.rtf", "public.utf8-plain-text"])
+    }
+
+    /// 没有富文本格式的裸位图 (浏览器"复制图片") 仍按图片收, 不受上一条规则影响。
+    func testBareImageWithStrayTextStillCapturesAsImage() {
+        pasteboard.putText("https://example.com/pic.png")
+        pasteboard.typeIDs = ["public.png", "public.utf8-plain-text"]
+        pasteboard.dataByUTI = ["public.png": Data([0x89, 0x50])]
+        monitor.checkNow()
+        XCTAssertEqual(captured[0].kind, .image)
+    }
+
     func testSkipsFiles() {
         pasteboard.putFiles([URL(fileURLWithPath: "/tmp/a.txt"), URL(fileURLWithPath: "/tmp/b.txt")])
         monitor.checkNow()
