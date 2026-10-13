@@ -95,6 +95,8 @@ final class ShelfViewModel {
     /// 本次手势内纵向分量的累计幅值: 超过横向累计即否决翻页 (纵向扫动不响应)。
     @ObservationIgnored private var verticalDrift: CGFloat = 0
     @ObservationIgnored private var pageFlipCooldownUntil = Date.distantPast
+    /// 上一次「点击即粘贴」的卡片与时间: 供双击间隔内的重复点击去重, 见 handleCardClick。
+    @ObservationIgnored private var lastClickPaste: (uuid: String, at: Date)?
     /// The drag-select in the card row: its rectangle and which cards it touches. The
     /// selection it produces is applied in `updateCardSweep`.
     let cardSweep = CardSweep()
@@ -467,6 +469,15 @@ final class ShelfViewModel {
             let pasteNow = !settings.doubleClickToPaste || wasSoleSelection
             selection.click(item.uuid)
             if pasteNow {
+                // 双击「已选中」的卡片时, 两下点击都满足 wasSoleSelection, 各触发一遍
+                // 粘贴 (用户报告)。系统双击间隔内对同一张卡的后续点击视为双击的后半下,
+                // 只选中不重复粘贴; 刻意的慢速二次单击 (超过双击间隔) 仍然粘贴。
+                if let last = lastClickPaste,
+                   last.uuid == item.uuid,
+                   Date().timeIntervalSince(last.at) < NSEvent.doubleClickInterval {
+                    return
+                }
+                lastClickPaste = (item.uuid, Date())
                 requestPaste(item, plain: false)
             }
         }
