@@ -95,8 +95,9 @@ final class ShelfViewModel {
     /// 本次手势内纵向分量的累计幅值: 超过横向累计即否决翻页 (纵向扫动不响应)。
     @ObservationIgnored private var verticalDrift: CGFloat = 0
     @ObservationIgnored private var pageFlipCooldownUntil = Date.distantPast
-    /// 上一次「点击即粘贴」的卡片与时间: 供双击间隔内的重复点击去重, 见 handleCardClick。
-    @ObservationIgnored private var lastClickPaste: (uuid: String, at: Date)?
+    /// 上一次卡片点击的卡片与时间: 双击判定用 (同一张卡, 系统双击间隔内的第二击),
+    /// 见 handleCardClick。双击粘贴后清空, 连击按「两次独立双击」计数。
+    @ObservationIgnored private var lastCardClick: (uuid: String, at: Date)?
     /// The drag-select in the card row: its rectangle and which cards it touches. The
     /// selection it produces is applied in `updateCardSweep`.
     let cardSweep = CardSweep()
@@ -438,9 +439,9 @@ final class ShelfViewModel {
     }
 
     /// Shift/⌘-click always extend the multi-selection, regardless of
-    /// `settings.doubleClickToPaste`. A plain click either selects-and-pastes (today's
-    /// behavior) or just selects, leaving the paste to `handleCardDoubleClick`/⏎ — see
-    /// that setting's doc comment in `SettingsStore`.
+    /// `settings.doubleClickToPaste`. A plain click just selects; with that setting on,
+    /// a second click on the same card within the system double-click interval pastes —
+    /// paste depends on the click cadence only, never on the prior selection state.
     func handleCardClick(_ item: ClipItem, modifiers: NSEvent.ModifierFlags) {
         // Selecting a card leaves the search field: focus returns to the shelf so the
         // card shortcuts (Space preview, ⏎ paste) work with the results still up. The
@@ -459,25 +460,19 @@ final class ShelfViewModel {
                 selection.click(item.uuid)
                 return
             }
-            // Paste immediately on a single click when two-click-to-paste is off. When
-            // it's on, paste only if this card was ALREADY the sole selection before this
-            // click, i.e. this is the second click on an already-highlighted card. That
-            // keeps a fast double-click pasting (first click selects, second pastes) while
-            // the first click always highlights instantly, with no double-click-timeout
-            // wait (see `CardClickGesture`).
-            let wasSoleSelection = selection.primary == item.uuid && selection.selected.count == 1
-            let pasteNow = !settings.doubleClickToPaste || wasSoleSelection
+            // 双击语义: 单击只选中, 同一张卡在系统双击间隔内的第二击才粘贴。粘贴不
+            // 依赖选中状态, 所以「双击已选中的卡片贴两遍」这类次数叠加从根上不存在
+            // (旧逻辑按「点击时是否已是唯一选中」判定, 已废除)。双击粘贴后清空记录,
+            // 三连击只贴一遍, 再连两击算下一次双击。代价: 慢速单击已选中的卡片不再
+            // 粘贴, 粘贴路径 = 双击 / ⏎ / 右键菜单。
+            let now = Date()
+            let isDoubleClick = lastCardClick?.uuid == item.uuid
+                && now.timeIntervalSince(lastCardClick!.at) < NSEvent.doubleClickInterval
+            lastCardClick = (item.uuid, now)
+            let pasteNow = !settings.doubleClickToPaste || isDoubleClick
             selection.click(item.uuid)
             if pasteNow {
-                // 双击「已选中」的卡片时, 两下点击都满足 wasSoleSelection, 各触发一遍
-                // 粘贴 (用户报告)。系统双击间隔内对同一张卡的后续点击视为双击的后半下,
-                // 只选中不重复粘贴; 刻意的慢速二次单击 (超过双击间隔) 仍然粘贴。
-                if let last = lastClickPaste,
-                   last.uuid == item.uuid,
-                   Date().timeIntervalSince(last.at) < NSEvent.doubleClickInterval {
-                    return
-                }
-                lastClickPaste = (item.uuid, Date())
+                lastCardClick = nil
                 requestPaste(item, plain: false)
             }
         }
