@@ -204,12 +204,13 @@ final class AppCoordinator {
                 viewModel.pasteSelection(plain: false)
                 return true
             case 51 where event.modifierFlags.contains(.command): // cmd-backspace — delete selected card
-                // When search is active: clears the search (all pills + text).
-                // When search is empty: deletes the selected card.
-                if !viewModel.searchQuery.isEmpty {
-                    viewModel.clearSearch()
-                } else {
+                // 删除可见列表里选中的卡片, 筛选保持不动 (deleteSelection 自己会刷新
+                // 查询)。选中不在可见列表时 (刚输入筛选、旧选中被筛掉) 屏幕上没有可
+                // 删除的目标, 退回清除筛选——旧选中随之重新可见。
+                if viewModel.primaryItem != nil {
                     viewModel.deleteSelection()
+                } else {
+                    viewModel.clearSearch()
                 }
                 return true
             case 14 where event.modifierFlags.contains(.command): // cmd-E — edit primary item
