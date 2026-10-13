@@ -439,7 +439,7 @@ private struct TabPill: View {
     /// A user-chosen hex color (e.g. "FF3B30"); empty means no color identity.
     var tint: String = ""
     /// Whether to draw the SF Symbol when no emoji is set. History uses it (a clock);
-    /// pinboards don't — their identity is the color dot and optional emoji.
+    /// pinboards don't — their identity is the tag color block and optional emoji.
     var showsSymbol: Bool = true
     let isSelected: Bool
     var isDropTargeted: Bool = false
@@ -456,6 +456,22 @@ private struct TabPill: View {
     /// The board's own color when it has one, so the targeted tab matches its callout.
     private var dropColor: Color { tintColor ?? .accentColor }
 
+    /// 实底 tag 上的可读前景: 按相对亮度选深字或白字 (柠檬黄配深字, 鸢尾紫配白字)。
+    private var tintIsLight: Bool {
+        guard let rgb = UInt64(tint, radix: 16) else { return false }
+        let r = Double((rgb >> 16) & 0xFF) / 255
+        let g = Double((rgb >> 8) & 0xFF) / 255
+        let b = Double(rgb & 0xFF) / 255
+        return 0.299 * r + 0.587 * g + 0.114 * b > 0.6
+    }
+
+    private var labelColor: Color {
+        if isSelected, tintColor != nil {
+            return tintIsLight ? Color.black.opacity(0.82) : Color.white
+        }
+        return isSelected ? Color.primary : Color.primary.opacity(0.72)
+    }
+
     var body: some View {
         HStack(spacing: 4) {
             if let emoji, !emoji.isEmpty {
@@ -464,12 +480,6 @@ private struct TabPill: View {
                 Image(systemName: symbol)
             }
             Text(label)
-            if let tintColor {
-                Circle()
-                    .fill(tintColor)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-            }
             if let shortcutHint {
                 Text("⌘\(shortcutHint)")
                     .font(.system(size: 9, weight: .semibold, design: .rounded))
@@ -483,7 +493,7 @@ private struct TabPill: View {
         .font(Tokens.caption)
         // Unselected tabs sit a step below the selected one but stay well above
         // `.secondary`, which drops too far on glass (see `GlassSurfaceModifier`).
-        .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.72))
+        .foregroundStyle(labelColor)
         .padding(.horizontal, 8)
         .frame(height: 24)
         .background(
@@ -518,11 +528,12 @@ private struct TabPill: View {
     }
 
     private var backgroundFill: Color {
-        if isDropTargeted { return dropColor.opacity(0.24) }
+        if isDropTargeted { return dropColor.opacity(0.35) }
         if isSelected {
-            if let tintColor { return tintColor.opacity(0.18) }
+            if let tintColor { return tintColor } // 选中 = tag 实底
             return Color.primary.opacity(0.08)
         }
+        if let tintColor { return tintColor.opacity(isHovering ? 0.22 : 0.15) } // 未选中 = tag 软底
         return isHovering ? Color.primary.opacity(0.05) : .clear
     }
 }
