@@ -2,7 +2,6 @@ import AppKit
 import CopyCore
 import KeyboardShortcuts
 import Quartz
-import Sparkle
 
 extension KeyboardShortcuts.Name {
     static let toggleShelf = Self("toggleShelf", initial: .init(.v, modifiers: [.command, .shift]))
@@ -22,9 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// `applyHideMenuBarIconSetting`. `nil` means no status item exists right now.
     private var statusItem: NSStatusItem?
     private var coordinator: AppCoordinator!
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                                   updaterDelegate: nil,
-                                                                   userDriverDelegate: nil)
+    // 本地分支移除 Sparkle 更新器: 上游 appcast 的版本号与本地的日期版本方案
+    // (yyyy.mm.dd.N) 不可比, 自动检查会反复提示更新, 而更新会覆盖本地改动。
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -80,16 +78,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.coordinator.selectNextPinboard()
         }
 
-        // Bridged directly here rather than through `AppCoordinator`: the Sparkle
-        // updater controller and `NSApp` are both owned/reachable at this layer, not
-        // the coordinator's.
-        coordinator.shelfViewModel.onCheckForUpdates = { [weak self] in
-            self?.updaterController.checkForUpdates(nil)
-        }
-        // Same bridge for the Settings > About "Check for Updates…" button.
-        coordinator.settings.onCheckForUpdates = { [weak self] in
-            self?.updaterController.checkForUpdates(nil)
-        }
         coordinator.shelfViewModel.onQuit = {
             NSApp.terminate(nil)
         }
@@ -217,11 +205,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        let checkForUpdates = NSMenuItem(title: "Check for Updates…",
-                                         action: #selector(checkForUpdates(_:)),
-                                         keyEquivalent: "")
-        checkForUpdates.target = self
-        menu.addItem(checkForUpdates)
 
         #if DEBUG
         menu.addItem(.separator())
@@ -291,10 +274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         openSettingsFromCommand()
-    }
-
-    @objc private func checkForUpdates(_ sender: Any?) {
-        updaterController.checkForUpdates(sender)
     }
 
     @objc private func togglePasteStack() {

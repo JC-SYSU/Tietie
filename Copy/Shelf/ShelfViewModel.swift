@@ -198,12 +198,8 @@ final class ShelfViewModel {
     @ObservationIgnored var onExportHistory: (() -> Void)?
     @ObservationIgnored var onImportHistory: (() -> Void)?
     @ObservationIgnored var onOpenSettings: (() -> Void)?
-    /// Bridged directly from `AppDelegate` (not `AppCoordinator`) — the Sparkle
-    /// updater controller is owned by `AppDelegate`, not the coordinator.
-    @ObservationIgnored var onCheckForUpdates: (() -> Void)?
-    /// Also bridged directly from `AppDelegate`, for symmetry with `onCheckForUpdates`
-    /// — `NSApp.terminate` doesn't need coordinator state, but wiring it from the same
-    /// place keeps both AppDelegate-owned bridges together.
+    /// Bridged directly from `AppDelegate` — `NSApp.terminate` doesn't need coordinator
+    /// state, and the delegate is where the app-level wiring lives.
     @ObservationIgnored var onQuit: (() -> Void)?
 
     @ObservationIgnored private var token: ObservationToken?

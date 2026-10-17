@@ -1,11 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// The About pane: app identity (icon + version), a Sparkle update check, and project
-/// links. Leads with a centered identity block instead of the standard `SettingsPaneHeader`
-/// the other panes use, the way an about box conventionally looks. "Check for Updates…"
-/// routes through `SettingsStore.onCheckForUpdates` (wired to Sparkle in `AppDelegate`) so
-/// this view never reaches into the updater directly.
+/// The About pane: app identity (icon + version) and project links. Leads with a centered
+/// identity block instead of the standard `SettingsPaneHeader` the other panes use, the
+/// way an about box conventionally looks. The Sparkle update UI is absent from this local
+/// build (see the note in `AppDelegate`).
 struct AboutSettings: View {
     @Bindable var settings: SettingsStore
 
@@ -22,7 +21,6 @@ struct AboutSettings: View {
 
             Form {
                 Section {
-                    Button(String(localized: "Check for Updates…")) { settings.onCheckForUpdates?() }
                     Button(String(localized: "View Onboarding Again")) { settings.onShowOnboarding?() }
                 }
 

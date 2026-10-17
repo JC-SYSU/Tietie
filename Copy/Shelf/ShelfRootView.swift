@@ -274,7 +274,6 @@ private struct DrawerMenu: View {
         menu.addItem(.separator())
         add(String(localized: "Keyboard & Tips…")) { viewModel.showingTips = true }
         add(String(localized: "Settings…")) { viewModel.onOpenSettings?() }
-        add(String(localized: "Check for Updates…")) { viewModel.onCheckForUpdates?() }
         menu.addItem(.separator())
         add(String(localized: "Quit Copy")) { viewModel.onQuit?() }
 
