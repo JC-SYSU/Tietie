@@ -281,7 +281,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
               let screen = NSScreen.screens.first(where: {
                   NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
               }) ?? NSScreen.main else { return }
-        let frame = ShelfLayout.frame(visibleFrame: screen.frame, height: currentShelfHeight, floating: floatingShelf)
+        let frame = ShelfLayout.frame(visibleFrame: screen.visibleFrame, height: currentShelfHeight, floating: floatingShelf)
         panel.setFrame(frame, display: true)
     }
 
@@ -289,7 +289,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         floatingShelf = floating
         guard let panel, panel.isVisible, !isHiding, let screen = panel.screen else { return }
         setShelfContentOffset(0, in: panel)
-        panel.setFrame(ShelfLayout.frame(visibleFrame: screen.frame,
+        panel.setFrame(ShelfLayout.frame(visibleFrame: screen.visibleFrame,
                                         height: currentShelfHeight, floating: floating), display: true)
     }
 
@@ -305,7 +305,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
         }) ?? NSScreen.main else { return }
 
-        let frame = ShelfLayout.frame(visibleFrame: screen.frame, height: currentShelfHeight, floating: floatingShelf)
+        let frame = ShelfLayout.frame(visibleFrame: screen.visibleFrame, height: currentShelfHeight, floating: floatingShelf)
         let panel = self.panel ?? makePanel()
         self.panel = panel
 

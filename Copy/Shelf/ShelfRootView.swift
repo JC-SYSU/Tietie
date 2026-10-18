@@ -550,9 +550,24 @@ private struct ShelfItemsRow: View {
     /// immediately — no separate change-hook plumbing needed on the SwiftUI side.
     private var compact: Bool { viewModel.settings.compactShelf }
 
+    /// 按卡片行实测宽度算每页卡片数。每次布局都重新算, 不读缓存——切换显示器、
+    /// 改分辨率、切紧凑档位都会自然得到新值 (旧的缓存方案要等一条四段回调链路
+    /// 走通, 断一环就得重启, 用户报告过)。
+    private func capacity(forWidth width: CGFloat) -> Int {
+        let card = Tokens.cardWidth(compact: compact)
+        let gap = Tokens.cardGap(compact: compact)
+        let pad = Tokens.shelfPadding(compact: compact)
+        // 收藏分隔线比普通卡片间隙多占一个 gap。
+        let dividerReserve: CGFloat =
+            (viewModel.favoritesCount > 0 && viewModel.favoritesCount < viewModel.items.count)
+            ? (5.5 + gap) : 0
+        return PageCapacity.count(viewportWidth: width, cardWidth: card, gap: gap,
+                                  padding: pad, dividerReserve: dividerReserve)
+    }
+
     /// 当前页的卡片切片 (携带全列表下标, 供收藏分隔线与 ⌘数字粘贴编号使用)。
-    private var pageItems: [(index: Int, item: ClipItem)] {
-        let capacity = max(1, viewModel.pageCapacity)
+    private func pageItems(capacity: Int) -> [(index: Int, item: ClipItem)] {
+        let capacity = max(1, capacity)
         guard !viewModel.items.isEmpty else { return [] }
         let start = min(viewModel.pageIndex * capacity, viewModel.items.count - 1)
         let end = min(start + capacity, viewModel.items.count)
@@ -568,10 +583,10 @@ private struct ShelfItemsRow: View {
         return viewModel.pinboards.first { $0.id.map { ids.contains($0) } ?? false }?.tint
     }
 
-    /// 翻页容器: 无滚动视图, 每页固定渲染 `pageCapacity` 张卡, 翻页由状态机切片驱动。
-    private var pageContent: some View {
+    /// 翻页容器: 无滚动视图, 每页固定渲染 `capacity` 张卡, 翻页由状态机切片驱动。
+    private func pageContent(capacity: Int) -> some View {
         HStack(spacing: Tokens.cardGap(compact: compact)) {
-            ForEach(pageItems, id: \.item.uuid) { pair in
+            ForEach(pageItems(capacity: capacity), id: \.item.uuid) { pair in
                 // A divider between the leading favorites and the rest.
                 if pair.index == viewModel.favoritesCount,
                    viewModel.favoritesCount > 0,
@@ -652,10 +667,6 @@ private struct ShelfItemsRow: View {
         .coordinateSpace(name: CardSweep.contentSpace)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("shelfRoot")) } action: {
             viewModel.cardSweep.viewportFrame = $0
-            viewModel.updatePageCapacity(for: $0.width)
-        }
-        .onChange(of: viewModel.settings.compactShelf) { _, _ in
-            viewModel.refreshPageCapacity()
         }
         .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
         // 整页替换的滑动过渡: 方向跟随最近一次翻页。
@@ -677,36 +688,46 @@ private struct ShelfItemsRow: View {
         if viewModel.items.isEmpty {
             ShelfEmptyState(viewModel: viewModel)
         } else {
-            // 遮罩与箭头包在 pageContent (含 .id 翻页过渡) 外层: 翻页时卡片在
-            // 固定的渐隐带下滑动, 箭头保持原位不随页面移动。
-            pageContent
-                .mask {
-                    HStack(spacing: 0) {
-                        if viewModel.pageIndex > 0 {
-                            LinearGradient(colors: [.black.opacity(0), .black],
-                                           startPoint: .leading, endPoint: .trailing)
-                                .frame(width: Self.edgeFadeWidth)
-                        }
-                        Rectangle().fill(.black)
-                        if viewModel.pageIndex < viewModel.pageCount - 1 {
-                            LinearGradient(colors: [.black, .black.opacity(0)],
-                                           startPoint: .leading, endPoint: .trailing)
-                                .frame(width: Self.edgeFadeWidth)
+            // 宽度是唯一真相: 每页卡片数在这里按当前实测宽度算出, 直接喂给渲染。
+            // 布局一变 (切显示器/改分辨率/换紧凑档位) 这里就重跑, 没有缓存可失效。
+            GeometryReader { geo in
+                let capacity = capacity(forWidth: geo.size.width)
+                // 遮罩与箭头包在 pageContent (含 .id 翻页过渡) 外层: 翻页时卡片在
+                // 固定的渐隐带下滑动, 箭头保持原位不随页面移动。
+                pageContent(capacity: capacity)
+                    .mask {
+                        HStack(spacing: 0) {
+                            if viewModel.pageIndex > 0 {
+                                LinearGradient(colors: [.black.opacity(0), .black],
+                                               startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: Self.edgeFadeWidth)
+                            }
+                            Rectangle().fill(.black)
+                            if viewModel.pageIndex < PageCapacity.pageCount(itemCount: viewModel.items.count, capacity: capacity) - 1 {
+                                LinearGradient(colors: [.black, .black.opacity(0)],
+                                               startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: Self.edgeFadeWidth)
+                            }
                         }
                     }
-                }
-                .overlay(alignment: .leading) { pageEdgeControl(-1) }
-                .overlay(alignment: .trailing) { pageEdgeControl(1) }
+                    .overlay(alignment: .leading) { pageEdgeControl(-1, capacity: capacity) }
+                    .overlay(alignment: .trailing) { pageEdgeControl(1, capacity: capacity) }
+                    // 事件路径 (滚动/键盘) 拿不到布局宽度, 靠这个回报值翻页;
+                    // 只在容量真的变了时才写回, 避免每次布局都触发无效更新。
+                    .onAppear { viewModel.layoutDidMeasure(capacity: capacity) }
+                    .onChange(of: capacity) { _, new in viewModel.layoutDidMeasure(capacity: new) }
+            }
         }
     }
 
     /// 该方向还有页面时渲染边缘箭头 (方向 -1 = 上一页, +1 = 下一页), 否则不占位。
     @ViewBuilder
-    private func pageEdgeControl(_ direction: Int) -> some View {
-        let hasPage = direction < 0 ? viewModel.pageIndex > 0 : viewModel.pageIndex < viewModel.pageCount - 1
+    private func pageEdgeControl(_ direction: Int, capacity: Int) -> some View {
+        let pageCount = PageCapacity.pageCount(itemCount: viewModel.items.count, capacity: capacity)
+        let hasPage = direction < 0 ? viewModel.pageIndex > 0 : viewModel.pageIndex < pageCount - 1
         if hasPage {
             PageEdgeButton(direction: direction) {
-                viewModel.flipPage(direction: direction)
+                viewModel.flipPage(direction: direction, capacity: capacity)
             }
         }
     }

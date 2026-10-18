@@ -30,7 +30,7 @@ targets:
       path: Copy/Info.plist
       properties:
         CFBundleDisplayName: Copy
-        CFBundleShortVersionString: "2026.10.17.1"
+        CFBundleShortVersionString: "2026.10.19.1"
         CFBundleVersion: "9"
         LSUIElement: true
         LSMinimumSystemVersion: "14.0"
@@ -57,7 +57,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tarikbc.Copy
-        MARKETING_VERSION: "2026.10.17.1"
+        MARKETING_VERSION: "2026.10.19.1"
         SWIFT_VERSION: "5.0"
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Automatic

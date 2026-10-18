@@ -136,18 +136,21 @@ final class ClipboardMonitorTests: XCTestCase {
     func testImageWithHTMLWrapperAndNoTextCapturesAsImage() {
         pasteboard.putImage(Data([0x89, 0x50]))
         pasteboard.typeIDs = ["public.png", "public.html", "public.tiff"]
-        pasteboard.dataByUTI = ["public.html": Data("<img>".utf8)]
+        // 保留 putImage 写入的位图数据, 只补 HTML 壳 (直接赋值会把它覆盖掉)。
+        pasteboard.dataByUTI["public.html"] = Data("<img>".utf8)
         monitor.checkNow()
-        XCTAssertEqual(captured[0].kind, .image)
+        XCTAssertEqual(captured.first?.kind, .image)
     }
 
     /// 空串纯文本视同没有文本: 位图 + HTML + 空串仍是图片。
     func testImageWithEmptyTextAndHTMLCapturesAsImage() {
         pasteboard.putText("")
         pasteboard.typeIDs = ["public.png", "public.html", "public.utf8-plain-text"]
-        pasteboard.dataByUTI = ["public.html": Data("<img>".utf8)]
+        // putText 清空了 dataByUTI, 位图数据必须自己补上, 否则剪贴板上既无图也无文本。
+        pasteboard.dataByUTI = ["public.png": Data([0x89, 0x50]),
+                                "public.html": Data("<img>".utf8)]
         monitor.checkNow()
-        XCTAssertEqual(captured[0].kind, .image)
+        XCTAssertEqual(captured.first?.kind, .image)
     }
 
     func testSkipsFiles() {

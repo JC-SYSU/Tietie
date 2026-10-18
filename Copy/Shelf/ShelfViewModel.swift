@@ -79,19 +79,19 @@ final class ShelfViewModel {
     }
     var pinboards: [Pinboard] = []
     var selection = ShelfSelection()
-    /// 翻页状态: 当前页码、每页卡片数、最近一次翻页方向 (±1, 驱动滑动动画方向)。
+    /// 翻页状态: 当前页码、最近一次翻页方向 (±1, 驱动滑动动画方向)。
+    /// 每页卡片数不在这里缓存: 渲染时由卡片行按当前实测宽度直接用 `PageCapacity`
+    /// 算出。`layoutCapacity` 只是最近一次布局的回报值, 供滚动/键盘翻页这些拿不到
+    /// 布局宽度的路径使用, 每次布局都会刷新。
     private(set) var pageIndex = 0
-    private(set) var pageCapacity = 6
+    private(set) var layoutCapacity = 6
     private(set) var lastFlipDirection = 0
 
-    /// 总页数 (至少 1 页)。
+    /// 总页数 (至少 1 页), 按最近一次布局容量计算。
     var pageCount: Int {
-        let capacity = max(1, pageCapacity)
-        return max(1, (items.count + capacity - 1) / capacity)
+        PageCapacity.pageCount(itemCount: items.count, capacity: layoutCapacity)
     }
     @ObservationIgnored private var pageAccumulator: CGFloat = 0
-    /// 最近一次量到的轨道视口宽度, 供分页容量重算。
-    @ObservationIgnored private var viewportWidth: CGFloat = 0
     /// 本次手势内纵向分量的累计幅值: 超过横向累计即否决翻页 (纵向扫动不响应)。
     @ObservationIgnored private var verticalDrift: CGFloat = 0
     @ObservationIgnored private var pageFlipCooldownUntil = Date.distantPast
@@ -517,8 +517,7 @@ final class ShelfViewModel {
     private func followSelection() {
         guard let primary = selection.primary,
               let index = items.firstIndex(where: { $0.uuid == primary }) else { return }
-        let capacity = max(1, pageCapacity)
-        pageIndex = index / capacity
+        pageIndex = index / max(1, layoutCapacity)
     }
 
     // MARK: 翻页滚动
@@ -563,9 +562,13 @@ final class ShelfViewModel {
 
     /// 翻一页 (方向 ±1)。滚动手势与边缘箭头点击共用这一个入口, 保证滑动动画方向、
     /// 触感反馈和新页首卡选中行为完全一致。点击路径有意绕过滚动手势的冷却计时。
-    func flipPage(direction: Int) {
-        let capacity = max(1, pageCapacity)
-        let maxPage = max(0, (items.count + capacity - 1) / capacity - 1)
+    /// 翻一页 (方向 ±1)。滚动手势与边缘箭头点击共用这一个入口, 保证滑动动画方向、
+    /// 触感反馈和新页首卡选中行为完全一致。点击路径有意绕过滚动手势的冷却计时。
+    /// - Parameter capacity: 当前每页卡片数; 边缘箭头在布局里调用时直接传入实测值,
+    ///   滚动事件路径不传则用最近一次布局回报的 `layoutCapacity`。
+    func flipPage(direction: Int, capacity: Int? = nil) {
+        let capacity = max(1, capacity ?? layoutCapacity)
+        let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: capacity)
         guard direction != 0, maxPage > 0 else { return }
         lastFlipDirection = direction
         withAnimation(.easeOut(duration: 0.25)) {
@@ -578,27 +581,11 @@ final class ShelfViewModel {
         selection.click(target.uuid)
     }
 
-    /// 轨道视口宽度变化时重算每页卡片数。
-    /// 每页卡片数按面板宽度自适应: 用真实卡片宽度/间距/内边距换算 (紧凑档位各不同),
-    /// 收藏分隔线的占位也扣掉。视口宽度存下来, 数据或档位变化时可直接重算。
-    func updatePageCapacity(for viewportWidth: CGFloat) {
-        self.viewportWidth = viewportWidth
-        refreshPageCapacity()
-    }
-
-    func refreshPageCapacity() {
-        guard viewportWidth > 0 else { return }
-        let compact = settings.compactShelf
-        let card = Tokens.cardWidth(compact: compact)
-        let gap = Tokens.cardGap(compact: compact)
-        let pad = Tokens.shelfPadding(compact: compact)
-        // 收藏分隔线是一条额外元素 (宽约 5.5 含内边距), 比普通卡片间隙多占一个 gap。
-        let dividerReserve: CGFloat = (favoritesCount > 0 && favoritesCount < items.count) ? (5.5 + gap) : 0
-        let available = viewportWidth - 2 * pad - dividerReserve
-        let count = max(1, Int((available + gap) / (card + gap)))
-        if count != pageCapacity { pageCapacity = count }
-        // 容量变化后页码可能越界, clamp 回最后一页。
-        let maxPage = max(0, (items.count + count - 1) / count - 1)
+    /// 卡片行每次布局实测到新容量时回报。只用于刷新事件路径的容量镜像和收敛页码,
+    /// 渲染不读这个值 (渲染直接按宽度算)。
+    func layoutDidMeasure(capacity: Int) {
+        if capacity != layoutCapacity { layoutCapacity = capacity }
+        let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: capacity)
         if pageIndex > maxPage { pageIndex = maxPage }
     }
 
@@ -1231,7 +1218,9 @@ final class ShelfViewModel {
         let rest = new.filter { !$0.isFavorite }
         items = settings.favoritesEnabled ? favorites + rest : new
         favoritesCount = settings.favoritesEnabled ? favorites.count : 0
-        refreshPageCapacity()
+        // 条目变化可能让当前页越界; 容量本身由布局负责, 这里只收敛页码。
+        let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: layoutCapacity)
+        if pageIndex > maxPage { pageIndex = maxPage }
         let order = items.map(\.uuid)
         let primaryBefore = selection.primary
         selection.prune(existing: Set(order), order: order)
