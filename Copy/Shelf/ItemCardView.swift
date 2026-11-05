@@ -909,7 +909,7 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮) 加浅蓝罩色, 中间是发光的编号数字。
+/// 编号舞台的卡片遮罩: 浅蓝渐变罩色, 中间是白色编号数字。
 /// 文字依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
@@ -937,33 +937,35 @@ private struct CardNumberStageOverlay: View {
         .accessibilityHidden(true)
     }
 
-    /// 待选卡片的浅蓝罩色 (#8CC2FF), 叠在压暗层上面, 表示「这些卡都在候选中」。
-    private static let candidateTint = Color(red: 0.55, green: 0.76, blue: 1.0)
+    /// 待选卡片的罩色: 左上天蓝 #A8D8FF → 右下长春花蓝 #B4B8FF, 色相从 205° 走到 238°,
+    /// 和系统强调蓝同一色系, 又带一点向靛蓝的过渡。叠 0.6 后白卡片变成浅蓝。
+    private static let candidateGradient = LinearGradient(
+        colors: [Color(red: 168 / 255, green: 216 / 255, blue: 1), Color(red: 180 / 255, green: 184 / 255, blue: 1)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// 数字阴影的深蓝 #1E3A8A, 和罩色右下的长春花蓝同一色相方向。
+    private static let digitShadow = Color(red: 30 / 255, green: 58 / 255, blue: 138 / 255)
+    /// ⌘ 数字够不到的卡: 冷灰 #9AA3B5, 不压暗, 只让它们看起来不在候选里。
+    private static let inactiveWash = Color(red: 154 / 255, green: 163 / 255, blue: 181 / 255)
 
-    /// 压暗到看得清内容: 编号卡边缘 0.32、中心 0.20, 再叠 0.5 的浅蓝;
-    /// ⌘ 数字够不到的卡只压暗、不叠蓝, 而且暗一档。
-    private var scrim: some View {
-        let dimmed = stage == .dimmed
-        return ZStack {
-            RadialGradient(
-                colors: [Color.black.opacity(dimmed ? 0.38 : 0.20), Color.black.opacity(dimmed ? 0.46 : 0.32)],
-                center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
-            if !dimmed {
-                Self.candidateTint.opacity(0.5)
-            }
+    /// 编号卡叠 0.6 的浅蓝渐变; 第 10 张起叠 0.35 的冷灰。
+    @ViewBuilder private var scrim: some View {
+        if stage == .dimmed {
+            Self.inactiveWash.opacity(0.35)
+        } else {
+            Self.candidateGradient.opacity(0.6)
         }
     }
 
-    /// 只有编号数字, 没有底座。白字配上一版的白色外发光; 卡片压暗后仍偏浅,
-    /// 白字单靠发光对比度不够, 所以下面再垫一层柔和的深色晕。所有卡片同一种样式,
-    /// 选中的卡不另外着色。
+    /// 只有编号数字, 没有底座, 白字配深蓝阴影。所有卡片同一种样式, 选中的卡不另外着色。
     private func keycap(_ number: Int) -> some View {
         Text(verbatim: "\(number)")
             .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(.white)
-        .shadow(color: .white.opacity(0.55), radius: 6)
-        .shadow(color: .black.opacity(0.45), radius: 10)
-        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+        // 一圈淡白光提亮字面, 两层深蓝阴影: 贴身的一层勾出字形, 外面一层大范围柔光,
+        // 让白字在浅蓝底上立得住。
+        .shadow(color: .white.opacity(0.4), radius: 4)
+        .shadow(color: Self.digitShadow.opacity(0.55), radius: 1.5, y: 1)
+        .shadow(color: Self.digitShadow.opacity(0.4), radius: 10)
     }
 }
