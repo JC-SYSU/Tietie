@@ -63,6 +63,21 @@ enum ShelfTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// 末尾换行去除的作用范围。去换行本身始终开启, 这里只选是否连系统剪贴板一起改写
+/// (见 `ClipboardMonitor.rewritesSystemClipboard`)。Raw value 存 UserDefaults, 保持稳定。
+enum TrailingNewlineScope: String, CaseIterable, Identifiable {
+    case history
+    case systemClipboard
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .history: return String(localized: "Copy History Only")
+        case .systemClipboard: return String(localized: "Also System Clipboard")
+        }
+    }
+}
+
 /// How long unfavorited, unpinned history items are kept before pruning.
 enum RetentionPeriod: String, CaseIterable {
     case unlimited
@@ -126,6 +141,7 @@ final class SettingsStore {
     static let hapticFeedbackKey = "hapticFeedback"
     static let appLanguageKey = "appLanguage"
     static let candidateLimitKey = "candidateLimit"
+    static let trailingNewlineScopeKey = "trailingNewlineScope"
 
     var retention: RetentionPeriod {
         didSet {
@@ -288,6 +304,16 @@ final class SettingsStore {
         }
     }
 
+    /// 默认只处理 Copy 历史; 改成系统剪贴板时经 `onTrailingNewlineScopeChange` 推给监视器。
+    var trailingNewlineScope: TrailingNewlineScope {
+        didSet {
+            guard trailingNewlineScope != oldValue else { return }
+            defaults.set(trailingNewlineScope.rawValue, forKey: Self.trailingNewlineScopeKey)
+            onTrailingNewlineScopeChange?(trailingNewlineScope)
+        }
+    }
+    @ObservationIgnored var onTrailingNewlineScopeChange: ((TrailingNewlineScope) -> Void)?
+
     @ObservationIgnored var onRulesChange: ((Set<String>) -> Void)?
     /// Fired by the About pane's "View Onboarding Again" button. Wired to
     /// `AppCoordinator.showOnboarding()`, which re-presents the welcome flow from step 0.
@@ -341,6 +367,8 @@ final class SettingsStore {
         }
         let savedLimit = defaults.object(forKey: Self.candidateLimitKey) as? Int
         candidateLimit = [10, 25, 50].contains(savedLimit) ? savedLimit! : 25
+        trailingNewlineScope = defaults.string(forKey: Self.trailingNewlineScopeKey)
+            .flatMap(TrailingNewlineScope.init(rawValue:)) ?? .history
         if let data = defaults.data(forKey: Self.excludedBundleIDsKey),
            let decoded = try? JSONDecoder().decode([String].self, from: data) {
             excludedBundleIDs = decoded.sorted()

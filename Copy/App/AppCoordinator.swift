@@ -426,6 +426,7 @@ final class AppCoordinator {
         let reporter = saveErrors
         self.monitor = ClipboardMonitor(
             pasteboard: NSPasteboard.general,
+            rewriter: NSPasteboard.general,
             rules: RulesEngine(excludedBundleIDs: Set(settings.excludedBundleIDs)),
             frontmostApp: {
                 let app = NSWorkspace.shared.frontmostApplication
@@ -461,6 +462,10 @@ final class AppCoordinator {
         )
         self.linkFetcher = linkFetcher
         self.ocrController = ocrController
+        monitor.rewritesSystemClipboard = settings.trailingNewlineScope == .systemClipboard
+        settings.onTrailingNewlineScopeChange = { [weak self] scope in
+            self?.monitor.rewritesSystemClipboard = scope == .systemClipboard
+        }
         settings.onRulesChange = { [weak self] excludedBundleIDs in
             self?.monitor.rules = RulesEngine(excludedBundleIDs: excludedBundleIDs)
         }

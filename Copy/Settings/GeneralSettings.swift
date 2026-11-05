@@ -48,6 +48,19 @@ struct GeneralSettings: View {
             }
 
             Section {
+                Picker(String(localized: "Remove Trailing Line Breaks"), selection: $settings.trailingNewlineScope) {
+                    ForEach(TrailingNewlineScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text(String(localized: "Line breaks at the end of copied text are always removed from Copy's history and from anything pasted from Copy. \"Also System Clipboard\" rewrites the clipboard right after you copy, so a plain ⌘V is clean too; the source app may then paste its own content with less formatting."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle(String(localized: "Enable Favorites"), isOn: $settings.favoritesEnabled)
             } footer: {
                 Text("Show favorite actions and keep favorites at the front of history. Turning this off preserves saved favorites and their protection from automatic cleanup.")

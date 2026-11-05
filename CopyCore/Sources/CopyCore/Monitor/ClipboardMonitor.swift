@@ -3,11 +3,15 @@ import Foundation
 public final class ClipboardMonitor {
     public var rules: RulesEngine
     public var isPaused = false
+    /// true = 捕获到末尾带换行的文本时, 把系统剪贴板也改写成去掉换行的版本 (直接 ⌘V
+    /// 也生效)。false = 只有 Copy 的历史和从 Copy 粘贴出去的内容去换行。
+    public var rewritesSystemClipboard = false
 
     /// Representations larger than this are never captured (memory protection).
     public static let maxRepresentationBytes = 100_000_000
 
     private let pasteboard: PasteboardReading
+    private let rewriter: PasteboardRewriting?
     private let pollInterval: TimeInterval
     private let frontmostApp: () -> (bundleID: String?, name: String?)
     private let onCapture: (CapturedItem) -> Void
@@ -15,11 +19,13 @@ public final class ClipboardMonitor {
     private var lastChangeCount: Int
 
     public init(pasteboard: PasteboardReading,
+                rewriter: PasteboardRewriting? = nil,
                 pollInterval: TimeInterval = 0.25,
                 rules: RulesEngine,
                 frontmostApp: @escaping () -> (bundleID: String?, name: String?),
                 onCapture: @escaping (CapturedItem) -> Void) {
         self.pasteboard = pasteboard
+        self.rewriter = rewriter
         self.pollInterval = pollInterval
         self.rules = rules
         self.frontmostApp = frontmostApp
@@ -52,7 +58,27 @@ public final class ClipboardMonitor {
         guard rules.shouldCapture(types: pasteboard.typeIdentifiers(),
                                   sourceBundleID: source.bundleID) else { return }
         guard let item = Self.snapshot(from: pasteboard, source: source) else { return }
+        if rewritesSystemClipboard, item.kind != .image {
+            rewriteSystemClipboard()
+        }
         onCapture(item)
+    }
+
+    /// 把剪贴板换成去掉末尾换行的版本。除纯文本/RTF 外的类型原样写回 (含 app 私有类型),
+    /// 但剪贴板所有者会变成 Copy, 源 app 自己粘贴时可能只认通用格式。任何一步不满足就
+    /// 保持原剪贴板不动。
+    private func rewriteSystemClipboard() {
+        guard let rewriter,
+              let text = pasteboard.string(), TrailingNewlines.endsWithNewline(text),
+              let original = rewriter.singleItemRepresentations(
+                optionalTypes: TrailingNewlines.plainTextUTIs,
+                maxTotalBytes: Self.maxRepresentationBytes),
+              let rewritten = TrailingNewlines.pasteboardRewrite(original, text: text),
+              // 读取期间源 app 又写了剪贴板: 放弃, 下一轮按新内容处理。
+              pasteboard.changeCount == lastChangeCount
+        else { return }
+        // 记下自己这次写入的 changeCount, 下一轮轮询就不会把它当成新复制再捕获一次。
+        lastChangeCount = rewriter.replaceContents(with: rewritten)
     }
 
     public static func snapshot(from pasteboard: PasteboardReading,
@@ -68,8 +94,10 @@ public final class ClipboardMonitor {
                 imageReps.append(CapturedRepresentation(uti: imageUTI, data: data))
             }
         }
-        // 文本本体: 空串视同没有。
-        let text = pasteboard.string().flatMap { $0.isEmpty ? nil : $0 }
+        // 文本本体: 去掉末尾换行 (见 TrailingNewlines); 空串或全是换行视同没有。
+        let rawText = pasteboard.string()
+        let hadTrailingNewline = rawText.map(TrailingNewlines.endsWithNewline) ?? false
+        let text = rawText.map(TrailingNewlines.trimmed).flatMap { $0.isEmpty ? nil : $0 }
         let hasRichText = pasteboard.typeIdentifiers().contains("public.rtf")
             || pasteboard.typeIdentifiers().contains("public.html")
         // Office 套件复制文本时附带选区位图作 fallback (位图+RTF/HTML/纯文本俱全):
@@ -101,7 +129,9 @@ public final class ClipboardMonitor {
         if HexColor.isColorText(text) { kind = .color }
         var representations: [CapturedRepresentation] = []
         if let rtf = pasteboard.data(forUTI: "public.rtf") {
-            representations.append(CapturedRepresentation(uti: "public.rtf", data: rtf))
+            // 纯文本末尾有换行时, RTF 末尾通常也有段落标记, 一并去掉 (去不掉就原样保留)。
+            let stripped = hadTrailingNewline ? TrailingNewlines.strippedRichText(rtf, type: .rtf) : nil
+            representations.append(CapturedRepresentation(uti: "public.rtf", data: stripped ?? rtf))
             if kind == .text { kind = .richText }
         }
         if let html = pasteboard.data(forUTI: "public.html") {

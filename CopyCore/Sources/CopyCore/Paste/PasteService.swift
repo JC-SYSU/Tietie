@@ -60,9 +60,10 @@ public final class PasteService {
     }
 
     public func place(_ representations: [CapturedRepresentation], plainTextOnly: Bool) {
-        var reps = representations
+        // 改动前入库的旧条目可能还带着末尾换行, 粘贴时统一去掉。
+        var reps = TrailingNewlines.strip(representations) ?? representations
         if plainTextOnly,
-           let plain = representations.first(where: { $0.uti == "public.utf8-plain-text" }) {
+           let plain = reps.first(where: { $0.uti == "public.utf8-plain-text" }) {
             reps = [plain]
         }
         pasteboard.write(reps, marker: CopyPasteboard.selfMarkerType)

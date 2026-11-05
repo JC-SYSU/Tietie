@@ -41,6 +41,11 @@
 "Floating" = "悬浮";
 "Floating adds space around the shelf and rounds every corner." = "悬浮模式在面板周围增加空间并圆角化所有边角。";
 
+"Remove Trailing Line Breaks" = "去除末尾换行";
+"Copy History Only" = "仅 Copy 历史";
+"Also System Clipboard" = "同时改写系统剪贴板";
+"Line breaks at the end of copied text are always removed from Copy's history and from anything pasted from Copy. \"Also System Clipboard\" rewrites the clipboard right after you copy, so a plain ⌘V is clean too; the source app may then paste its own content with less formatting." = "复制文本末尾的换行始终会从 Copy 历史和经 Copy 粘贴的内容中去除。选择「同时改写系统剪贴板」后，复制后剪贴板会立即被改写，直接 ⌘V 也不带末尾换行；源 app 内部粘贴自己的内容时可能丢失部分格式。";
+
 "Enable Favorites" = "启用收藏";
 "Show favorite actions and keep favorites at the front of history. Turning this off preserves saved favorites and their protection from automatic cleanup." = "显示收藏操作并将收藏内容保持在历史记录前端。关闭此选项会保留已保存的收藏及其自动清理保护。";
 
