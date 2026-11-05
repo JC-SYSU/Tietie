@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 
 @MainActor
 enum AppIconCache {
@@ -23,25 +24,68 @@ enum AppIconCache {
 /// 只取不透明、有一定饱和度和亮度的像素按色相分 12 桶, 用像素数×饱和度加权选最重的桶,
 /// 取桶内最鲜艳的一部分像素的平均色; 彩色像素太少 (灰、黑、白为主的图标) 时用全部
 /// 不透明像素平均。
+///
+/// 提取在后台线程做: 第一次见到某个 app 时找图标、画位图、统计颜色要 1–33 ms (实测
+/// Safari 33 ms), 放在主线程会让首次打开面板卡一下。算好之前色带用中性灰, 算好后
+/// `tints` 变化触发对应卡片重绘。结果按 bundle id 存进 UserDefaults, 之后启动直接读。
 @MainActor
-enum AppTintCache {
-    private static var cache: [String: NSColor] = [:]
-    private static var misses = Set<String>()
+@Observable
+final class AppTintCache {
+    static let shared = AppTintCache()
 
-    static func tint(forBundleID bundleID: String?) -> NSColor? {
-        guard let bundleID else { return nil }
-        if let cached = cache[bundleID] { return cached }
-        if misses.contains(bundleID) { return nil }
-        guard let icon = AppIconCache.icon(forBundleID: bundleID),
-              let color = dominantColor(of: icon) else {
-            misses.insert(bundleID)
-            return nil
+    private static let defaultsKey = "appTintCache.v1"
+
+    /// bundle id → 主色。`NSColor` 不可存 UserDefaults, 落盘时转成 "RRGGBB"。
+    private var tints: [String: NSColor] = [:]
+    @ObservationIgnored private var pending = Set<String>()
+    @ObservationIgnored private var misses = Set<String>()
+
+    private init() {
+        let saved = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) as? [String: String] ?? [:]
+        for (bundleID, hex) in saved {
+            if let color = Self.color(fromHex: hex) { tints[bundleID] = color }
         }
-        cache[bundleID] = color
-        return color
     }
 
-    static func dominantColor(of image: NSImage) -> NSColor? {
+    /// 已经算好的主色; 还没算时返回 nil 并在后台开始算。
+    func tint(forBundleID bundleID: String?) -> NSColor? {
+        guard let bundleID else { return nil }
+        if let cached = tints[bundleID] { return cached }
+        guard !misses.contains(bundleID), !pending.contains(bundleID) else { return nil }
+        pending.insert(bundleID)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let color = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+                .map { NSWorkspace.shared.icon(forFile: $0.path) }
+                .flatMap(Self.dominantColor(of:))
+            DispatchQueue.main.async {
+                self.pending.remove(bundleID)
+                guard let color else { self.misses.insert(bundleID); return }
+                self.tints[bundleID] = color
+                self.persist()
+            }
+        }
+        return nil
+    }
+
+    private func persist() {
+        let hexes = tints.compactMapValues(Self.hex(from:))
+        UserDefaults.standard.set(hexes, forKey: Self.defaultsKey)
+    }
+
+    nonisolated private static func hex(from color: NSColor) -> String? {
+        guard let c = color.usingColorSpace(.deviceRGB) else { return nil }
+        return String(format: "%02X%02X%02X", Int(round(c.redComponent * 255)),
+                      Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
+    }
+
+    nonisolated private static func color(fromHex hex: String) -> NSColor? {
+        guard hex.count == 6, let v = UInt32(hex, radix: 16) else { return nil }
+        return NSColor(deviceRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+                       blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+    }
+
+    /// 只读传入的图标、画进自己的位图, 可以在后台线程调用。
+    nonisolated static func dominantColor(of image: NSImage) -> NSColor? {
         let side = 32
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -86,7 +130,7 @@ enum AppTintCache {
     }
 
     /// 色带上的文字用白还是深色: 按 WCAG 相对亮度比较两者对比度, 取高的那个。
-    static func prefersDarkText(on color: NSColor) -> Bool {
+    nonisolated static func prefersDarkText(on color: NSColor) -> Bool {
         guard let c = color.usingColorSpace(.sRGB) else { return false }
         func lin(_ v: CGFloat) -> Double {
             let v = Double(v)

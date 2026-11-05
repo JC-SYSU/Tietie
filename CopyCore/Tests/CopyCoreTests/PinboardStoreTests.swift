@@ -38,6 +38,26 @@ final class PinboardStoreTests: XCTestCase {
         XCTAssertEqual(try pinboards.items(in: board.id!).count, 1)
     }
 
+    func testBatchedPinboardIDsMatchesPerItemLookup() throws {
+        let (store, pinboards) = try makeTempStores()
+        let work = try pinboards.create(name: "Work", symbol: "briefcase")
+        let home = try pinboards.create(name: "Home", symbol: "house")
+        let a = try store.save(makeText("a"))
+        let b = try store.save(makeText("b"))
+        let c = try store.save(makeText("c"))
+        try pinboards.add(itemID: a.id!, to: work.id!)
+        try pinboards.add(itemID: a.id!, to: home.id!)
+        try pinboards.add(itemID: c.id!, to: home.id!)
+        let batched = try pinboards.pinboardIDs(forItemIDs: [a.id!, b.id!, c.id!])
+        XCTAssertEqual(batched[a.id!], [work.id!, home.id!])
+        XCTAssertNil(batched[b.id!])
+        XCTAssertEqual(batched[c.id!], [home.id!])
+        for id in [a.id!, b.id!, c.id!] {
+            XCTAssertEqual(batched[id] ?? [], try pinboards.pinboardIDs(forItemID: id))
+        }
+        XCTAssertEqual(try pinboards.pinboardIDs(forItemIDs: []), [:])
+    }
+
     func testDeletingPinboardKeepsItems() throws {
         let (store, pinboards) = try makeTempStores()
         let board = try pinboards.create(name: "Doomed", symbol: "pin")

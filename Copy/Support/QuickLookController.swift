@@ -56,12 +56,45 @@ extension QuickLookController {
     /// representations (one per file for multi-file copies), keeping only paths that
     /// still exist on disk — a moved or deleted source file just quietly drops out
     /// rather than handing Quick Look a stale path.
-    static func fileURLs(for item: ClipItem, store: ItemStore) -> [URL] {
+    /// 同步读库 + 查文件, 不要在主线程的渲染路径上调; 卡片用 `FileURLCache`。
+    nonisolated static func fileURLs(for item: ClipItem, store: ItemStore) -> [URL] {
         guard item.kind == .file, let id = item.id,
               let reps = try? store.representations(forItemID: id) else { return [] }
         return reps
             .filter { $0.uti == "public.file-url" }
             .compactMap { URL(dataRepresentation: $0.data, relativeTo: nil) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
+/// 文件卡片指向的、磁盘上还在的文件 URL, 按 uuid + contentHash 缓存 (包括「一个都不在」)。
+/// 解析要读 representation 表、逐个查文件是否存在, 放到后台线程; 翻页会重建卡片, 以前
+/// 每次翻回来都在主线程重做一遍。
+@MainActor
+final class FileURLCache {
+    static let shared = FileURLCache()
+
+    private var resolved: [String: [URL]] = [:]
+    private var waiting: [String: [([URL]) -> Void]] = [:]
+
+    private func key(_ item: ClipItem) -> String { item.uuid + "#" + item.contentHash }
+
+    /// 已解析过的结果; 没解析过时为 nil。
+    func cached(for item: ClipItem) -> [URL]? { resolved[key(item)] }
+
+    /// 解析 (有缓存直接回调), 回调在主线程。
+    func urls(for item: ClipItem, store: ItemStore, completion: @escaping ([URL]) -> Void) {
+        let key = key(item)
+        if let hit = resolved[key] { completion(hit); return }
+        if waiting[key] != nil { waiting[key]?.append(completion); return }
+        waiting[key] = [completion]
+        DispatchQueue.global(qos: .userInitiated).async {
+            let urls = QuickLookController.fileURLs(for: item, store: store)
+            DispatchQueue.main.async {
+                self.resolved[key] = urls
+                let callbacks = self.waiting.removeValue(forKey: key) ?? []
+                callbacks.forEach { $0(urls) }
+            }
+        }
     }
 }

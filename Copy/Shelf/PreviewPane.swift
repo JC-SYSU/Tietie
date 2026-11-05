@@ -44,7 +44,8 @@ struct PreviewPane: View {
         let displayText = String(text.prefix(200_000))
         let cap = min(displayText.count, highlightCap)
         let highlightPortion = String(displayText.prefix(cap))
-        let highlight = CodeHighlightCache.shared.result(for: text, uuid: item.uuid, cap: cap)
+        let highlight = CodeHighlightCache.shared.result(for: text, uuid: item.uuid,
+                                                         contentHash: item.contentHash, cap: cap)
         guard highlight.language != nil else { return Text(displayText) }
 
         guard displayText.count > highlightPortion.count else {

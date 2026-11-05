@@ -60,30 +60,89 @@ func highlightedText(_ text: String, tokens: [HighlightToken]) -> Text {
 final class CodeHighlightCache {
     static let shared = CodeHighlightCache()
 
-    private struct Entry {
-        let textHash: Int
-        let language: CodeLanguage?
-        let tokens: [HighlightToken]
+    /// 按 条目 + 内容 + 截取长度 缓存。截取长度要一致: 卡片浏览和搜索态都按开头
+    /// 1500 字符检测语言 (调用方保证), 预览面板用自己的长度, 各占一条, 不会互相挤掉。
+    /// 以前的键只有 uuid + cap, 浏览传 300 字前缀、搜索传全文, 同键不同哈希, 每次在
+    /// 浏览和搜索之间切换都要重新检测、着色。
+    private struct Key: Hashable {
+        let uuid: String
+        let contentHash: String
+        let cap: Int
     }
 
-    private var entries: [String: Entry] = [:]
+    private struct Entry {
+        let language: CodeLanguage?
+        let tokens: [HighlightToken]
+        /// 卡片显示用的文字: 截取后把每行行首空白换成不换行空格 (见 `preservingIndentation`)。
+        let display: String
+    }
+
+    private var entries: [Key: Entry] = [:]
     /// Bounds memory for very long shelf histories. Eviction is a blunt "clear
     /// everything" rather than real LRU bookkeeping — simple, and at this scale
     /// (a few hundred small entries) the occasional full recompute is unnoticeable.
     private let capacity = 500
 
-    func result(for text: String, uuid: String, cap: Int) -> (language: CodeLanguage?, tokens: [HighlightToken]) {
+    /// `text` 是条目的全文; 只取前 `cap` 个字符检测和着色。
+    func result(for text: String, uuid: String, contentHash: String, cap: Int)
+        -> (language: CodeLanguage?, tokens: [HighlightToken], display: String) {
+        let key = Key(uuid: uuid, contentHash: contentHash, cap: cap)
+        if let entry = entries[key] { return (entry.language, entry.tokens, entry.display) }
         let capped = String(text.prefix(cap))
-        let hash = capped.hashValue
-        let key = "\(uuid)#\(cap)"
-        if let entry = entries[key], entry.textHash == hash {
-            return (entry.language, entry.tokens)
-        }
         let language = CodeDetector.detect(capped)
         let tokens = language.map { SyntaxHighlighter.tokens(for: capped, language: $0) } ?? []
+        let entry = Entry(language: language, tokens: tokens, display: preservingIndentation(capped))
         if entries.count >= capacity { entries.removeAll() }
-        entries[key] = Entry(textHash: hash, language: language, tokens: tokens)
-        return (language, tokens)
+        entries[key] = entry
+        return (language, tokens, entry.display)
+    }
+}
+
+/// Replaces each line's leading whitespace with non-breaking spaces so SwiftUI keeps
+/// the code's indentation (`Text` otherwise collapses leading whitespace when a line
+/// wraps). One-for-one (space/tab → one NBSP) so it never shifts the highlight token
+/// ranges, which are computed against the original text.
+func preservingIndentation(_ text: String) -> String {
+    text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+        let indent = line.prefix { $0 == " " || $0 == "\t" }.count
+        guard indent > 0 else { return String(line) }
+        return String(repeating: "\u{00A0}", count: indent) + line.dropFirst(indent)
+    }.joined(separator: "\n")
+}
+
+/// 卡片上按条目内容算一次就不变的小结果: 图片 OCR 摘要、字符数。SwiftUI 会反复求值卡片
+/// body (方向键、悬停、翻页都会), 这些原来每次都重新扫一遍全文。
+@MainActor
+final class CardTextCache {
+    static let shared = CardTextCache()
+
+    private struct OCRKey: Hashable {
+        let uuid: String
+        let ocr: String
+        let query: String
+    }
+    private var ocrSnippets: [OCRKey: String?] = [:]
+    private var characterCounts: [String: Int] = [:]
+    private let capacity = 500
+
+    /// `OCRSnippet.make` 的缓存版。OCR 文字可能在条目入库后才补上, 所以文字本身也在键里。
+    func ocrSnippet(for item: ClipItem, recognizedText: String, query: String) -> String? {
+        let key = OCRKey(uuid: item.uuid, ocr: recognizedText, query: query)
+        if let cached = ocrSnippets[key] { return cached }
+        let made = OCRSnippet.make(recognizedText: recognizedText, query: query)
+        if ocrSnippets.count >= capacity { ocrSnippets.removeAll() }
+        ocrSnippets[key] = made
+        return made
+    }
+
+    /// 条目正文的字符数 (按字形簇, 和 `String.count` 一致), 按 uuid + contentHash 缓存。
+    func characterCount(for item: ClipItem) -> Int {
+        let key = item.uuid + "#" + item.contentHash
+        if let cached = characterCounts[key] { return cached }
+        let count = item.plainText?.count ?? 0
+        if characterCounts.count >= capacity { characterCounts.removeAll() }
+        characterCounts[key] = count
+        return count
     }
 }
 

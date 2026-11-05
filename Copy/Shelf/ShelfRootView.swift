@@ -67,9 +67,8 @@ struct ShelfRootView: View {
         // legend strip, padding) fell through to the window behind the shelf.
         .background(Color.black.opacity(0.001).ignoresSafeArea())
         .glassSurface(corners: GlassSurfaceCorners())
-        // 外阴影: 面板在屏幕底部, 往上投影匹配光源从上而来的视觉逻辑。在容器视图
-        // 层面施加(而不是在 glassSurface 内部对玻璃材质施加), 避免触发离屏层变黑。
-        .shadow(color: Color.black.opacity(0.5), radius: 25, y: -8)
+        // 不加外阴影: 阴影画在面板窗口之外的部分会被窗口边界裁掉, 实际看不到 (2026-10
+        // 试过四种做法都没有可见投影), 但它让整个面板每帧多一次离屏渲染。
         // Drags onto the pinboard tabs (cards to file, tabs to reorder) are taken by the
         // hosting view in AppKit, not by a SwiftUI `.onDrop` (see `ShelfHostingView`). It
         // maps the pointer to a tab using each tab's frame, collected via
@@ -584,14 +583,6 @@ private struct ShelfItemsRow: View {
         return viewModel.items[start..<end].enumerated().map { (index: start + $0.offset, item: $0.element) }
     }
 
-    /// 卡片所属的第一个收藏板主题色 (按标签顺序取第一个), 供顶部归属色条;
-    /// 不属于任何收藏板时返回 nil。读取成员版本计数, 加入/移出时触发重算。
-    private func firstPinboardTint(for item: ClipItem) -> String? {
-        _ = viewModel.pinboardMembershipVersion
-        guard let itemID = item.id else { return nil }
-        guard let ids = try? viewModel.pinboardStore.pinboardIDs(forItemID: itemID), !ids.isEmpty else { return nil }
-        return viewModel.pinboards.first { $0.id.map { ids.contains($0) } ?? false }?.tint
-    }
 
     /// ⌘ 编号舞台下这张卡的角色: 当前页前 9 张亮出编号, 其余压暗; 舞台没亮时为 nil。
     private func numberStage(forIndex index: Int) -> CardNumberStage? {
@@ -602,7 +593,9 @@ private struct ShelfItemsRow: View {
 
     /// 翻页容器: 无滚动视图, 每页固定渲染 `capacity` 张卡, 翻页由状态机切片驱动。
     private func pageContent(capacity: Int) -> some View {
-        HStack(spacing: Tokens.cardGap(compact: compact)) {
+        // 一页卡片共用一次批量查询 (见 ShelfViewModel.pinboardTints)。
+        let tints = viewModel.pinboardTints()
+        return HStack(spacing: Tokens.cardGap(compact: compact)) {
             ForEach(pageItems(capacity: capacity), id: \.item.uuid) { pair in
                 // A divider between the leading favorites and the rest.
                 if pair.index == viewModel.favoritesCount,
@@ -616,7 +609,7 @@ private struct ShelfItemsRow: View {
                     isInlineRenaming: viewModel.inlineRenamingItemID == pair.item.id,
                     store: viewModel.store,
                     pinboards: viewModel.pinboards,
-                    pinboardTint: firstPinboardTint(for: pair.item),
+                    pinboardTint: pair.item.id.flatMap { tints[$0] },
                     currentPinboardID: currentPinboardID,
                     favoritesEnabled: viewModel.settings.favoritesEnabled,
                     compact: compact,
@@ -657,6 +650,8 @@ private struct ShelfItemsRow: View {
                     dragProvider: { viewModel.dragProvider(for: pair.item) },
                     dragBadgeCount: viewModel.isSelected(pair.item) ? viewModel.selection.selected.count : 1
                 )
+                // 值没变的卡片跳过 body 重算 (比较规则见 ItemCardView 的 Equatable 扩展)。
+                .equatable()
                 .id(pair.item.uuid)
                 .background(
                     GeometryReader { geo in
@@ -714,22 +709,13 @@ private struct ShelfItemsRow: View {
                 let capacity = capacity(forWidth: geo.size.width)
                 // 遮罩与箭头包在 pageContent (含 .id 翻页过渡) 外层: 翻页时卡片在
                 // 固定的渐隐带下滑动, 箭头保持原位不随页面移动。
+                let pageCount = PageCapacity.pageCount(itemCount: viewModel.items.count, capacity: capacity)
                 pageContent(capacity: capacity)
-                    .mask {
-                        HStack(spacing: 0) {
-                            if viewModel.pageIndex > 0 {
-                                LinearGradient(colors: [.black.opacity(0), .black],
-                                               startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: Self.edgeFadeWidth)
-                            }
-                            Rectangle().fill(.black)
-                            if viewModel.pageIndex < PageCapacity.pageCount(itemCount: viewModel.items.count, capacity: capacity) - 1 {
-                                LinearGradient(colors: [.black, .black.opacity(0)],
-                                               startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: Self.edgeFadeWidth)
-                            }
-                        }
-                    }
+                    // 只有一页时不加渐隐遮罩: 遮罩要把整排卡片离屏渲染一遍再合成。
+                    .modifier(EdgeFadeMask(enabled: pageCount > 1,
+                                           leading: viewModel.pageIndex > 0,
+                                           trailing: viewModel.pageIndex < pageCount - 1,
+                                           width: Self.edgeFadeWidth))
                     .overlay(alignment: .leading) { pageEdgeControl(-1, capacity: capacity) }
                     .overlay(alignment: .trailing) { pageEdgeControl(1, capacity: capacity) }
                     // 事件路径 (滚动/键盘) 拿不到布局宽度, 靠这个回报值翻页;
@@ -750,6 +736,35 @@ private struct ShelfItemsRow: View {
             PageEdgeButton(direction: direction, enabled: hasPage) {
                 viewModel.flipPage(direction: direction, capacity: capacity)
             }
+        }
+    }
+}
+
+/// 卡片行两侧的渐隐遮罩 (该方向还有页面时淡出 `width`)。`enabled` 为 false 时整个
+/// 不加 mask。
+private struct EdgeFadeMask: ViewModifier {
+    let enabled: Bool
+    let leading: Bool
+    let trailing: Bool
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.mask {
+                HStack(spacing: 0) {
+                    if leading {
+                        LinearGradient(colors: [.black.opacity(0), .black], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: width)
+                    }
+                    Rectangle().fill(.black)
+                    if trailing {
+                        LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: width)
+                    }
+                }
+            }
+        } else {
+            content
         }
     }
 }

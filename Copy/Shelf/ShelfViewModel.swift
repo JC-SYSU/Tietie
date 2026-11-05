@@ -793,7 +793,7 @@ final class ShelfViewModel {
     /// straight from its `public.file-url` representations. No-ops if none of those
     /// files still exist on disk (e.g. the source was moved or deleted since copying).
     func quickLook(_ item: ClipItem) {
-        QuickLookController.shared.preview(QuickLookController.fileURLs(for: item, store: store))
+        FileURLCache.shared.urls(for: item, store: store) { QuickLookController.shared.preview($0) }
     }
 
     func delete(_ item: ClipItem) {
@@ -903,6 +903,35 @@ final class ShelfViewModel {
     /// 收藏板成员变动计数: 卡片顶部的归属色条靠它感知「加入/移出收藏板」——
     /// 成员关系变化不改动 items 数组, 单观察 items 察觉不到。
     private(set) var pinboardMembershipVersion = 0
+
+    /// 条目 id → 所属第一个收藏板 (按标签顺序) 的主题色, 供卡片右下角书角用。一页卡片
+    /// 共用一次批量查询: 条目列表、收藏板列表或成员关系变了才重查。读的是 `items`、
+    /// `pinboards`、`pinboardMembershipVersion`, 所以调用它的视图在这三者变化时会重算。
+    func pinboardTints() -> [Int64: String] {
+        let ids = items.compactMap(\.id)
+        let stamp = PinboardTintStamp(itemIDs: ids, pinboards: pinboards.map { "\($0.id ?? 0):\($0.tint)" },
+                                      membership: pinboardMembershipVersion)
+        if stamp == pinboardTintStamp { return pinboardTintMap }
+        var map: [Int64: String] = [:]
+        if let memberships = try? pinboardStore.pinboardIDs(forItemIDs: ids), !memberships.isEmpty {
+            for (itemID, boardIDs) in memberships {
+                if let tint = pinboards.first(where: { $0.id.map(boardIDs.contains) ?? false })?.tint {
+                    map[itemID] = tint
+                }
+            }
+        }
+        pinboardTintMap = map
+        pinboardTintStamp = stamp
+        return map
+    }
+
+    private struct PinboardTintStamp: Equatable {
+        let itemIDs: [Int64]
+        let pinboards: [String]
+        let membership: Int
+    }
+    @ObservationIgnored private var pinboardTintStamp: PinboardTintStamp?
+    @ObservationIgnored private var pinboardTintMap: [Int64: String] = [:]
 
     func addItem(_ item: ClipItem, toPinboard id: Int64) {
         guard let itemID = item.id else { return }

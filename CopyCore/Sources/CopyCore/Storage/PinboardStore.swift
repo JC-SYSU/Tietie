@@ -121,6 +121,23 @@ public struct PinboardStore {
         }
     }
 
+    /// 一批条目各自所属的收藏板, 一次查询。面板每次渲染一整页卡片, 逐张调
+    /// `pinboardIDs(forItemID:)` 是每张一次主线程读库。不属于任何收藏板的条目不出现在结果里。
+    public func pinboardIDs(forItemIDs itemIDs: [Int64]) throws -> [Int64: Set<Int64>] {
+        guard !itemIDs.isEmpty else { return [:] }
+        return try writer.read { db in
+            let placeholders = Array(repeating: "?", count: itemIDs.count).joined(separator: ",")
+            let rows = try Row.fetchAll(db, sql:
+                "SELECT itemId, pinboardId FROM pinboard_item WHERE itemId IN (\(placeholders))",
+                arguments: StatementArguments(itemIDs))
+            var result: [Int64: Set<Int64>] = [:]
+            for row in rows {
+                result[row["itemId"] as Int64, default: []].insert(row["pinboardId"] as Int64)
+            }
+            return result
+        }
+    }
+
     public func observeAll(onError: @escaping (Error) -> Void,
                            onChange: @escaping ([Pinboard]) -> Void) -> ObservationToken {
         let observation = ValueObservation.tracking { db in

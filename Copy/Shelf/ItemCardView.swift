@@ -73,9 +73,10 @@ struct ItemCardView: View {
     }
 
     /// File URL(s) still on disk for this item, used to gate the "Quick Look" menu
-    /// item — see `QuickLookController.fileURLs(for:store:)`.
+    /// item. 读 `FileURLCache` 的结果 (文件卡片的缩略图出现时已在后台解析好), 不在
+    /// 主线程读库; 还没解析完时菜单里先不显示「快速查看」。
     private var quickLookURLs: [URL] {
-        QuickLookController.fileURLs(for: item, store: store)
+        FileURLCache.shared.cached(for: item) ?? []
     }
 
     /// The user-assigned title, if any. When set it takes the header's primary-label
@@ -161,6 +162,16 @@ struct ItemCardView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
+        // 阴影画在卡片背后的一块圆角矩形上, 不直接 .shadow 整张卡: 对整棵视图加阴影要先
+        // 离屏渲染出整张卡的 alpha 再模糊, 每张卡一次; 对一个形状加阴影直接按路径画。
+        // 深色外观下选中卡的强调色光晕同理。
+        .background(
+            RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                .shadow(color: (isSelected && colorScheme == .dark) ? Color.accentColor.opacity(0.32) : .clear,
+                        radius: (isSelected && colorScheme == .dark) ? 8 : 0, y: 1)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
                 .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
@@ -182,12 +193,6 @@ struct ItemCardView: View {
             }
             onHoverChanged(hovering)
         }
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-        // A soft accent glow lifts the selected card off the row in dark mode, matching
-        // the shelf's Liquid Glass depth. In light mode a colored halo reads heavy, so
-        // the selection there relies on the accent border + gradient fill alone.
-        .shadow(color: (isSelected && colorScheme == .dark) ? Color.accentColor.opacity(0.32) : .clear,
-                radius: (isSelected && colorScheme == .dark) ? 8 : 0, y: 1)
         // A gentle spring on the selection border/fill/glow so moving between cards reads
         // as one cohesive motion rather than an instant snap. Scoped to `isSelected` so it
         // never animates content changes; skipped under Reduce Motion.
@@ -305,7 +310,7 @@ struct ItemCardView: View {
     /// 卡头色带的颜色: 来源 app 图标的主色; 图片卡、取不到图标的条目用中性灰。
     /// 深色外观下压暗一些, 免得色带在暗面板上发亮。
     private var bandTint: NSColor? {
-        item.kind == .image ? nil : AppTintCache.tint(forBundleID: item.appBundleID)
+        item.kind == .image ? nil : AppTintCache.shared.tint(forBundleID: item.appBundleID)
     }
 
     private var bandFill: Color {
@@ -410,36 +415,24 @@ struct ItemCardView: View {
     /// Renders `text` (capped to `cap` characters, same as the plain-text path always
     /// did) with syntax colors when `CodeDetector` recognizes it as code, otherwise as
     /// plain `Text` exactly as before this feature existed. Detection + tokenization
-    /// are cached per item (`CodeHighlightCache`) so scrolling the shelf doesn't
+    /// are cached per item (`CodeHighlightCache`) so re-rendering the shelf doesn't
     /// re-run them every frame; "Copy"/paste are untouched — this only changes what's
     /// drawn on screen.
     @ViewBuilder
     private func codeAwareBody(text: String, cap: Int) -> some View {
-        let capped = String(text.prefix(cap))
-        let highlight = CodeHighlightCache.shared.result(for: text, uuid: item.uuid, cap: cap)
-        let display = Self.preservingIndentation(capped)
+        let highlight = CodeHighlightCache.shared.result(for: text, uuid: item.uuid,
+                                                         contentHash: item.contentHash, cap: cap)
+        let display = highlight.display
         if highlight.language != nil {
             highlightedText(display, tokens: highlight.tokens)
                 .font(.system(size: 12, design: .monospaced))
-        } else if containsBoxDrawing(capped) {
+        } else if containsBoxDrawing(display) {
             // 制表符 (┌─┬) 要等宽才对得齐。
             Text(display)
                 .font(.system(size: 12, design: .monospaced))
         } else {
             Text(display)
         }
-    }
-
-    /// Replaces each line's leading whitespace with non-breaking spaces so SwiftUI keeps
-    /// the code's indentation (`Text` otherwise collapses leading whitespace when a line
-    /// wraps). One-for-one (space/tab → one NBSP) so it never shifts the highlight token
-    /// ranges, which are computed against the original text.
-    private static func preservingIndentation(_ text: String) -> String {
-        text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
-            let indent = line.prefix { $0 == " " || $0 == "\t" }.count
-            guard indent > 0 else { return String(line) }
-            return String(repeating: "\u{00A0}", count: indent) + line.dropFirst(indent)
-        }.joined(separator: "\n")
     }
 
     /// Text/rich-text card body. When the whole item is a hex color (e.g. someone
@@ -455,7 +448,8 @@ struct ItemCardView: View {
             // 搜索时显示命中处所在的那一段并高亮查询词 (见 SearchSnippet), 不再固定显示开头。
             // 代码条目在窗口文字上重新跑一遍语法着色 (按开头算的 token 套不到窗口上),
             // 命中处叠底色, 两者同时可见。
-            let language = CodeHighlightCache.shared.result(for: item.plainText ?? "", uuid: item.uuid, cap: 1_500).language
+            let language = CodeHighlightCache.shared.result(for: item.plainText ?? "", uuid: item.uuid,
+                                                            contentHash: item.contentHash, cap: 1_500).language
             let tokens = language.map { SnippetTokenCache.shared.tokens(for: snippet.text, uuid: item.uuid, language: $0) } ?? []
             let mono = language != nil || containsBoxDrawing(snippet.text)
             searchSnippetText(snippet, tokens: tokens)
@@ -471,7 +465,8 @@ struct ItemCardView: View {
             // paste bogs the shelf (历史 avg ~8.5k/hit, max 120k, was killing the frame
             // rate). The cache keyed by full text means switching to a query with
             // shorter hits won't read stale long-text highlights.
-            codeAwareBody(text: String((item.plainText ?? "").prefix(300)), cap: 1_500)
+            // 卡片只显示开头 300 字符; 检测、着色、缩进处理都按这 300 字符做并缓存。
+            codeAwareBody(text: item.plainText ?? "", cap: 300)
                 .font(Tokens.cardBody)
                 .lineLimit(bodyLineLimit(standard: 8, compact: 5))
                 .multilineTextAlignment(.leading)
@@ -510,7 +505,7 @@ struct ItemCardView: View {
         VStack(alignment: .leading, spacing: 4) {
             CardThumbnail(item: item, store: store)
             if !searchQuery.isEmpty, let ocr = item.recognizedText,
-               let snippet = OCRSnippet.make(recognizedText: ocr, query: searchQuery) {
+               let snippet = CardTextCache.shared.ocrSnippet(for: item, recognizedText: ocr, query: searchQuery) {
                 highlightedSnippet(snippet, query: searchQuery)
                     .font(Tokens.caption)
                     .foregroundStyle(.secondary)
@@ -605,7 +600,7 @@ struct ItemCardView: View {
             if item.sizeBytes > 100_000 {
                 return ByteCountFormatter.string(fromByteCount: Int64(item.sizeBytes), countStyle: .file)
             }
-            return String(format: String(localized: "%d characters"), item.plainText?.count ?? 0)
+            return String(format: String(localized: "%d characters"), CardTextCache.shared.characterCount(for: item))
         case .link:
             return URL(string: item.plainText ?? "")?.host ?? String(localized: "Link")
         case .image:
@@ -817,9 +812,10 @@ struct FileThumbnail: View {
             guard !resolved else { return }
             resolved = true
             image = ThumbnailCache.shared.cached(for: item)
-            if image == nil,
-               let url = QuickLookController.fileURLs(for: item, store: store)
-                   .first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            guard image == nil else { return }
+            // 文件 URL 在后台解析并缓存 (FileURLCache), 翻页重建卡片时不再在主线程重查。
+            FileURLCache.shared.urls(for: item, store: store) { urls in
+                guard let url = urls.first else { return }
                 ThumbnailCache.shared.fileThumbnail(for: item, url: url) { image = $0 }
             }
         }
@@ -990,5 +986,34 @@ private struct EditorialNumber: View {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// 卡片只按「画出来要用的值」比较, 忽略回调闭包。配合调用处的 `.equatable()`: 方向键、
+/// 点击、翻页、⌘ 舞台这些会让整排卡片的父视图重算, 但多数卡片的这些值没变, SwiftUI
+/// 就跳过它们的 body, 只重算选中状态等真正变了的那几张。
+///
+/// 闭包可以不比较: 它们都只捕获 `item` (已比较) 和视图模型 (同一个对象), 执行时再读
+/// 视图模型的当前状态。新增会影响绘制的存储属性时, 必须加进这里, 否则那张卡会显示旧状态。
+/// `@State` / `@Environment` (悬停、外观、减弱动态效果) 不受影响, 它们自己触发重绘;
+/// `AppTintCache` 是 @Observable, 主色算好后也会直接让读到它的卡片重绘。
+extension ItemCardView: Equatable {
+    nonisolated static func == (lhs: ItemCardView, rhs: ItemCardView) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.item == rhs.item
+                && lhs.isSelected == rhs.isSelected
+                && lhs.isInlineRenaming == rhs.isInlineRenaming
+                && lhs.pinboards == rhs.pinboards
+                && lhs.pinboardTint == rhs.pinboardTint
+                && lhs.currentPinboardID == rhs.currentPinboardID
+                && lhs.favoritesEnabled == rhs.favoritesEnabled
+                && lhs.compact == rhs.compact
+                && lhs.searchQuery == rhs.searchQuery
+                && lhs.isFlashing == rhs.isFlashing
+                && lhs.numberStage == rhs.numberStage
+                && lhs.numberStyle == rhs.numberStyle
+                && lhs.canShowInHistory == rhs.canShowInHistory
+                && lhs.dragBadgeCount == rhs.dragBadgeCount
+        }
     }
 }
