@@ -909,9 +909,9 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩。暗幕中心略亮、四周更暗; 编号是一块深色圆形底座上的大号
-/// 圆体数字, 带一圈上亮下暗的细边和柔和的外发光。选中的卡编号底座用强调色,
-/// 提示 ↩ 和 ⌘ 数字都能粘贴它。编号按顺序依次弹出 (每张晚 25ms)。
+/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮), 中间一枚大号键帽写着「⌘1」。键帽的
+/// 样式和面板里已有的键帽、翻页按钮一致 (浅色底 + 细边 + 一层小阴影), 选中的卡用强调色
+/// 实底白字, 和选中的标签页同一种样式。键帽依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
     let isSelected: Bool
@@ -923,8 +923,8 @@ private struct CardNumberStageOverlay: View {
         ZStack {
             scrim
             if case .numbered(let number) = stage {
-                plate(number)
-                    .scaleEffect(shown || reduceMotion ? 1 : 0.6)
+                keycap(number)
+                    .scaleEffect(shown || reduceMotion ? 1 : 0.85)
                     .opacity(shown || reduceMotion ? 1 : 0)
             }
         }
@@ -932,42 +932,35 @@ private struct CardNumberStageOverlay: View {
         .onAppear {
             guard !reduceMotion else { return }
             let delay: Double
-            if case .numbered(let number) = stage { delay = Double(number - 1) * 0.025 } else { delay = 0 }
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.62).delay(delay)) { shown = true }
+            if case .numbered(let number) = stage { delay = Double(number - 1) * 0.015 } else { delay = 0 }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.8).delay(delay)) { shown = true }
         }
         .accessibilityHidden(true)
     }
 
+    /// 压暗到看得清内容: 编号卡边缘 0.32、中心 0.20; ⌘ 数字够不到的卡再暗一档。
     private var scrim: some View {
         let dimmed = stage == .dimmed
         return RadialGradient(
-            colors: [Color.black.opacity(dimmed ? 0.55 : 0.30), Color.black.opacity(dimmed ? 0.72 : 0.58)],
+            colors: [Color.black.opacity(dimmed ? 0.38 : 0.20), Color.black.opacity(dimmed ? 0.46 : 0.32)],
             center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
     }
 
-    private func plate(_ number: Int) -> some View {
-        let side: CGFloat = compact ? 46 : 64
-        return ZStack {
-            // 实色底座: 磨砂材质会透出面板后面的壁纸, 每块底座颜色都不一样。
-            Circle()
-                .fill(isSelected
-                      ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor.blended(0.15, with: .white), Color.accentColor.blended(0.2, with: .black)],
-                                                     startPoint: .top, endPoint: .bottom))
-                      : AnyShapeStyle(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.10)],
-                                                     startPoint: .top, endPoint: .bottom)))
-            Circle()
-                .strokeBorder(
-                    LinearGradient(colors: [Color.white.opacity(0.75), Color.white.opacity(0.15)],
-                                   startPoint: .top, endPoint: .bottom),
-                    lineWidth: 1)
-            Text("\(number)")
-                .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
+    private func keycap(_ number: Int) -> some View {
+        let size = compact ? CGSize(width: 40, height: 32) : CGSize(width: 50, height: 40)
+        let shape = RoundedRectangle(cornerRadius: compact ? 7 : 9, style: .continuous)
+        return HStack(alignment: .firstTextBaseline, spacing: 1) {
+            Text(verbatim: "⌘")
+                .font(.system(size: compact ? 11 : 13, weight: .medium, design: .rounded))
+                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
+            Text(verbatim: "\(number)")
+                .font(.system(size: compact ? 16 : 20, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(.white)
-                .shadow(color: .white.opacity(0.55), radius: 6)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
         }
-        .frame(width: side, height: side)
-        .shadow(color: (isSelected ? Color.accentColor : .white).opacity(0.35), radius: 14)
-        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+        .frame(width: size.width, height: size.height)
+        .background(shape.fill(isSelected ? Color.accentColor : Color(nsColor: .windowBackgroundColor).opacity(0.95)))
+        .overlay(shape.strokeBorder(Color.primary.opacity(isSelected ? 0 : 0.12), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
     }
 }
