@@ -175,7 +175,7 @@ private struct WelcomeStep: View {
             Text("A visual shelf for everything you copy.")
                 .font(.body)
                 .foregroundStyle(.secondary)
-            Text("Press ⇧⌘V anytime to open it.")
+            Text("Press ⌥⌘V anytime to open it.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

@@ -73,14 +73,16 @@
 
 "Hide the Menu Bar Icon" = "隐藏菜单栏图标";
 "Set the Open Copy shortcut above before hiding the menu bar icon." = "在隐藏菜单栏图标之前，请先设置打开 Copy 的快捷键。";
-"Copy stays available with the Shift Command V shortcut. You can reach Settings and everything else from the shelf." = "通过 Shift Command V 快捷键仍可使用 Copy。你可以从面板访问设置和其他所有功能。";
+"Copy stays available with the Option Command V shortcut. You can reach Settings and everything else from the shelf." = "通过 Option Command V 快捷键仍可使用 Copy。你可以从面板访问设置和其他所有功能。";
 
 /* Settings - Shortcuts Pane */
 "Open Copy:" = "打开 Copy：";
 "Paste Stack:" = "粘贴栈：";
 "Quick Paste Latest:" = "快速粘贴最新：";
+"Paste Latest as Plain Text:" = "以纯文本粘贴最新：";
+"The latest item has no text" = "最新项目没有文本";
 "Next Pinboard:" = "下一个钉板：";
-"Quick Paste Latest pastes your most recent item into the current app without opening Copy. While the shelf is open, hold Option and press a number to paste that card." = "快速粘贴最新功能会在不打开 Copy 的情况下将最新项目粘贴到当前应用。面板打开时，按住 Option 键并按数字可粘贴对应卡片。";
+"Quick Paste Latest pastes your most recent item into the current app without opening Copy; Paste Latest as Plain Text does the same without any formatting. While the shelf is open, hold Option and press a number to paste that card." = "快速粘贴最新功能会在不打开 Copy 的情况下将最新项目粘贴到当前应用；以纯文本粘贴最新功能同样如此，但不带任何格式。面板打开时，按住 Option 键并按数字可粘贴对应卡片。";
 
 /* Settings - History Pane */
 "Keep History" = "保留历史记录";
@@ -207,7 +209,7 @@
 /* Onboarding */
 "Welcome to Copy" = "欢迎使用 Copy";
 "A visual shelf for everything you copy." = "你复制的一切都在可视化面板中。";
-"Press ⇧⌘V anytime to open it." = "随时按 ⇧⌘V 打开。";
+"Press ⌥⌘V anytime to open it." = "随时按 ⌥⌘V 打开。";
 "Copy pastes into the app you are using, which needs Accessibility access." = "Copy 会粘贴到你正在使用的应用，这需要辅助功能权限。";
 "On this version of macOS, allow Copy to read the clipboard so it can save your history." = "在此版本的 macOS 上，允许 Copy 读取剪贴板以保存你的历史记录。";
 "You can change this anytime in Settings." = "你可以随时在设置中更改此项。";

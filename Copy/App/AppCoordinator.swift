@@ -166,7 +166,7 @@ final class AppCoordinator {
                 viewModel.requestPaste(viewModel.items[index], plain: false)
             }
             // Ignore caps lock and device-specific flags when matching shortcuts, but
-            // keep Shift/Option/Control significant so e.g. the shelf's ⇧⌘V hotkey
+            // keep Shift/Option/Control significant so e.g. the ⇧⌘V plain-text hotkey
             // never falls through to the plain ⌘V paste action below.
             let shortcutModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             switch event.keyCode {
@@ -542,7 +542,7 @@ final class AppCoordinator {
         guard defaults.bool(forKey: "hasOnboarded"),
               !defaults.bool(forKey: seenKey) else { return }
         defaults.set(true, forKey: seenKey)
-        let hotkey = KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⇧⌘V"
+        let hotkey = KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⌥⌘V"
         HUD.show("Saved to Copy. Press \(hotkey) to open it.", duration: 2.8)
     }
 
@@ -643,6 +643,57 @@ final class AppCoordinator {
             return
         }
         pasteFromShelf(item, plainTextOnly: false)
+    }
+
+    /// ⇧⌘V: 把历史里最新的一条以纯文本粘贴到当前 app (只写 UTF-8 纯文本, 不带 RTF/HTML)。
+    /// 只取最新那一条: 它没有文本 (图片) 时提示并停止, 不往回找更早的条目, 免得粘出意料之外的内容。
+    func pasteLatestPlainText() {
+        guard let item = (try? store.recentItems(limit: 1))?.first else {
+            HUD.show("Nothing to paste")
+            return
+        }
+        guard let id = item.id,
+              let reps = try? store.representations(forItemID: id),
+              reps.contains(where: { $0.uti == "public.utf8-plain-text" }) else {
+            HUD.show(String(localized: "The latest item has no text"))
+            return
+        }
+        let paste = { [weak self] in
+            guard let self else { return }
+            self.pasteService.place(reps, plainTextOnly: true)
+            try? self.store.touch(itemID: id)
+            guard AXIsProcessTrusted() else {
+                HUD.show("Press ⌘V to paste")
+                self.promptForAccessibility()
+                return
+            }
+            self.sendPasteAfterModifiersRelease()
+        }
+        // 面板开着时先收起并把焦点还给原 app, 否则 ⌘V 会落进面板的搜索框。
+        if shelfController.isVisible {
+            shelfController.hide(restoreFocus: true, completion: paste)
+        } else {
+            paste()
+        }
+    }
+
+    /// 由全局快捷键触发时, 用户手指通常还按着 ⇧/⌥/⌃。这些实体修饰键会叠加到合成的 ⌘V 上:
+    /// 带着 ⇧ 就变成 ⇧⌘V, 不但不是普通粘贴, 还会再次触发本快捷键。所以先等这三个键松开
+    /// (⌘ 本身无所谓) 再发 ⌘V; 1.5 秒还没松开就放弃, 内容已在剪贴板上, 提示手动粘贴。
+    private func sendPasteAfterModifiersRelease() {
+        let blocking: CGEventFlags = [.maskShift, .maskAlternate, .maskControl]
+        Task { @MainActor [pasteService] in
+            try? await Task.sleep(for: .milliseconds(150))
+            let deadline = Date().addingTimeInterval(1.5)
+            while !CGEventSource.flagsState(.combinedSessionState).intersection(blocking).isEmpty {
+                guard Date() < deadline else {
+                    HUD.show("Press ⌘V to paste")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            pasteService.sendPasteKeystroke()
+        }
     }
 
     /// Advances the shelf's active tab to the next pinboard (History → first pinboard

@@ -137,7 +137,7 @@ struct GeneralSettings: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    Text("Copy stays available with the Shift Command V shortcut. You can reach Settings and everything else from the shelf.")
+                    Text("Copy stays available with the Option Command V shortcut. You can reach Settings and everything else from the shelf.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

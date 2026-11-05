@@ -17,9 +17,10 @@ struct ShortcutsSettings: View {
                 }
                 KeyboardShortcuts.Recorder(String(localized: "Paste Stack:"), name: .togglePasteStack)
                 KeyboardShortcuts.Recorder(String(localized: "Quick Paste Latest:"), name: .quickPasteLatest)
+                KeyboardShortcuts.Recorder(String(localized: "Paste Latest as Plain Text:"), name: .pasteLatestPlainText)
                 KeyboardShortcuts.Recorder(String(localized: "Next Pinboard:"), name: .nextPinboard)
             } footer: {
-                Text("Quick Paste Latest pastes your most recent item into the current app without opening Copy. While the shelf is open, hold Option and press a number to paste that card.")
+                Text("Quick Paste Latest pastes your most recent item into the current app without opening Copy; Paste Latest as Plain Text does the same without any formatting. While the shelf is open, hold Option and press a number to paste that card.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

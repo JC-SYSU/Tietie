@@ -8,7 +8,7 @@ struct TipsSheet: View {
     let onDone: () -> Void
 
     private var openHotkey: String {
-        KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⇧⌘V"
+        KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⌥⌘V"
     }
 
     private var pasteStackHotkey: String {

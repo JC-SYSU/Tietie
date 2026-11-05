@@ -4,12 +4,15 @@ import KeyboardShortcuts
 import Quartz
 
 extension KeyboardShortcuts.Name {
-    static let toggleShelf = Self("toggleShelf", initial: .init(.v, modifiers: [.command, .shift]))
+    /// 默认 ⌥⌘V: ⇧⌘V 让给 `pasteLatestPlainText`。只影响没存过这个快捷键的新配置。
+    static let toggleShelf = Self("toggleShelf", initial: .init(.v, modifiers: [.command, .option]))
     static let togglePasteStack = Self("togglePasteStack", initial: .init(.c, modifiers: [.command, .shift]))
     static let pasteNextFromStack = Self("pasteNextFromStack", initial: .init(.n, modifiers: [.control, .option, .command]))
     /// No default shortcut — the user opts in from Settings. Pastes the most recent
     /// history item directly into the frontmost app without opening the shelf.
     static let quickPasteLatest = Self("quickPasteLatest")
+    /// 默认 ⇧⌘V: 把历史里最新的一条以纯文本粘贴到当前 app, 不打开面板。
+    static let pasteLatestPlainText = Self("pasteLatestPlainText", initial: .init(.v, modifiers: [.command, .shift]))
     /// No default shortcut — the user opts in from Settings. Advances the shelf's
     /// active tab to the next pinboard while the shelf is open.
     static let nextPinboard = Self("nextPinboard")
@@ -74,6 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         KeyboardShortcuts.onKeyDown(for: .quickPasteLatest) { [weak self] in
             self?.coordinator.quickPasteLatest()
         }
+        KeyboardShortcuts.onKeyDown(for: .pasteLatestPlainText) { [weak self] in
+            self?.coordinator.pasteLatestPlainText()
+        }
         KeyboardShortcuts.onKeyDown(for: .nextPinboard) { [weak self] in
             self?.coordinator.selectNextPinboard()
         }
@@ -91,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ///
     /// Anti-stranding guard: hiding the icon must never leave the user with no way to
     /// reach Copy. The shelf's summon hotkey (`KeyboardShortcuts.Name.toggleShelf`,
-    /// ⇧⌘V by default) is drawer-first's other entry point, so this refuses to honor
+    /// ⌥⌘V by default) is drawer-first's other entry point, so this refuses to honor
     /// `hide` — keeping the status item visible regardless — if that hotkey is unset.
     /// `GeneralSettings` mirrors this by disabling its "Hide the menu bar icon" toggle
     /// under the same condition, but this check is the actually-authoritative one.

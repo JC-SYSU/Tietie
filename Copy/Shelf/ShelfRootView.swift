@@ -837,7 +837,7 @@ private struct ShelfEmptyState: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                 HStack(spacing: 14) {
-                    KeyHint(key: "⇧⌘V", label: "Open Copy")
+                    KeyHint(key: KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⌥⌘V", label: "Open Copy")
                     KeyHint(key: "↩", label: "Paste")
                     KeyHint(key: "Space", label: "Preview")
                 }
