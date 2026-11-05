@@ -217,3 +217,12 @@
 "Copy lives in your menu bar, ready when you need it." = "Copy 常驻菜单栏，随时待命。";
 "Previous page" = "上一页";
 "Next page" = "下一页";
+
+/* Shelf - Card labels */
+"Image" = "图片";
+"Link" = "链接";
+"Unknown" = "未知";
+"%d characters" = "%d 个字符";
+"1 file" = "1 个文件";
+"%d files" = "%d 个文件";
+"Space" = "空格";

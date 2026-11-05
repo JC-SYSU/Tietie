@@ -87,8 +87,8 @@ struct ItemCardView: View {
     /// Clicking it renames the card either way.
     private var headerLabel: String {
         if let customTitle { return customTitle }
-        if item.kind == .image { return "Image" }
-        return item.appName ?? "Unknown"
+        if item.kind == .image { return String(localized: "Image") }
+        return item.appName ?? String(localized: "Unknown")
     }
 
     /// A kind's body line limit for the current layout mode. The title now lives in the
@@ -99,16 +99,19 @@ struct ItemCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor).opacity(0.6))
-                .frame(height: 1)
-            body(for: item.kind)
-            Spacer(minLength: 0)
-            footer
+                .padding(.horizontal, compact ? 8 : 10)
+                .frame(height: Tokens.cardBandHeight(compact: compact))
+                .frame(maxWidth: .infinity)
+                .background(bandFill)
+            VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+                body(for: item.kind)
+                Spacer(minLength: 0)
+                footer
+            }
+            .padding(compact ? 8 : 10)
         }
-        .padding(compact ? 8 : 10)
         .frame(width: Tokens.cardWidth(compact: compact), height: Tokens.cardHeight(compact: compact), alignment: .topLeading)
         // M7: deliberately NOT routed through `glassSurface` even on macOS 26. Cards
         // are dense, content-bearing surfaces (up to 11 lines of mono-spaced clipboard
@@ -133,14 +136,12 @@ struct ItemCardView: View {
                 }
             }
         )
-        // 收藏板归属色条: 顶部 3pt 主题色, 标明卡片归档在哪个收藏板。必须在 clipShape
-        // 之前 (clipShape 只裁切它以下的内容), 色条才会随卡片圆角被裁, 不在顶部两角
-        // 露出方角。
-        .overlay(alignment: .top) {
+        // 收藏板归属: 右下角斜向锦带, 用收藏板主题色。顶部已经是 app 色带, 归属标识放
+        // 到对角, 两种颜色不会挨在一起被看混。必须在 clipShape 之前, 锦带两端才会被
+        // 卡片圆角裁掉。
+        .overlay(alignment: .bottomTrailing) {
             if let pinboardTint, !pinboardTint.isEmpty {
-                Rectangle()
-                    .fill(Tokens.color(fromHex: pinboardTint))
-                    .frame(height: 3)
+                CornerRibbon(color: Tokens.color(fromHex: pinboardTint), compact: compact)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
@@ -188,6 +189,8 @@ struct ItemCardView: View {
                 Image(systemName: "star.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(.yellow)
+                    // 星标落在 app 色带上, 黄色色带时靠这圈阴影分开。
+                    .shadow(color: .black.opacity(0.35), radius: 1)
                     .padding(6)
                     .accessibilityLabel("Favorite")
             }
@@ -311,6 +314,26 @@ struct ItemCardView: View {
         .frame(width: 16, height: 16)
     }
 
+    /// 卡头色带的颜色: 来源 app 图标的主色; 图片卡、取不到图标的条目用中性灰。
+    /// 深色外观下压暗一些, 免得色带在暗面板上发亮。
+    private var bandTint: NSColor? {
+        item.kind == .image ? nil : AppTintCache.tint(forBundleID: item.appBundleID)
+    }
+
+    private var bandFill: Color {
+        guard let tint = bandTint else { return Color.primary.opacity(0.07) }
+        if colorScheme == .dark {
+            return Color(nsColor: tint.blended(withFraction: 0.3, of: .black) ?? tint)
+        }
+        return Color(nsColor: tint)
+    }
+
+    private var bandForeground: Color {
+        guard let tint = bandTint else { return .secondary }
+        let shown = colorScheme == .dark ? (tint.blended(withFraction: 0.3, of: .black) ?? tint) : tint
+        return AppTintCache.prefersDarkText(on: shown) ? Color.black.opacity(0.82) : .white
+    }
+
     private var header: some View {
         HStack(spacing: 5) {
             // The icon steps aside while renaming so the inline field gets the full width.
@@ -320,7 +343,7 @@ struct ItemCardView: View {
                 if item.kind == .image {
                     Image(systemName: "photo")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(bandForeground.opacity(0.8))
                         .frame(width: 16, height: 16)
                 } else if let icon = AppIconCache.icon(forBundleID: item.appBundleID) {
                     Image(nsImage: icon)
@@ -341,13 +364,13 @@ struct ItemCardView: View {
                 // gesture), and the click never also selects/pastes the card.
                 Text(headerLabel)
                     .font(customTitle != nil ? Tokens.cardSubtitle : Tokens.cardTitle)
-                    .foregroundStyle(customTitle != nil ? .primary : .secondary)
+                    .foregroundStyle(bandForeground)
                     .lineLimit(1)
                     .onTapGesture { onBeginInlineRename() }
                 Spacer(minLength: 4)
                 Text(Tokens.relativeFormatter.localizedString(for: item.lastUsedAt, relativeTo: Date()))
                     .font(Tokens.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(bandForeground.opacity(0.75))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -367,6 +390,10 @@ struct ItemCardView: View {
         let display = Self.preservingIndentation(capped)
         if highlight.language != nil {
             highlightedText(display, tokens: highlight.tokens)
+                .font(.system(size: 12, design: .monospaced))
+        } else if containsBoxDrawing(capped) {
+            // 制表符 (┌─┬) 要等宽才对得齐。
+            Text(display)
                 .font(.system(size: 12, design: .monospaced))
         } else {
             Text(display)
@@ -396,12 +423,14 @@ struct ItemCardView: View {
         } else if !searchQuery.isEmpty,
                   let snippet = SearchSnippetCache.shared.snippet(for: item, query: searchQuery) {
             // 搜索时显示命中处所在的那一段并高亮查询词 (见 SearchSnippet), 不再固定显示开头。
-            // 代码条目保留等宽字体, 但这时不做语法着色: 着色 token 是按开头 1500 字符算的,
-            // 套不到窗口上。
-            let isCode = CodeHighlightCache.shared.result(for: item.plainText ?? "", uuid: item.uuid, cap: 1_500).language != nil
-            searchSnippetText(snippet)
-                .font(isCode ? .system(size: 12, design: .monospaced) : Tokens.cardBody)
-                .lineLimit(bodyLineLimit(standard: 11, compact: 6))
+            // 代码条目在窗口文字上重新跑一遍语法着色 (按开头算的 token 套不到窗口上),
+            // 命中处叠底色, 两者同时可见。
+            let language = CodeHighlightCache.shared.result(for: item.plainText ?? "", uuid: item.uuid, cap: 1_500).language
+            let tokens = language.map { SnippetTokenCache.shared.tokens(for: snippet.text, uuid: item.uuid, language: $0) } ?? []
+            let mono = language != nil || containsBoxDrawing(snippet.text)
+            searchSnippetText(snippet, tokens: tokens)
+                .font(mono ? .system(size: 12, design: .monospaced) : Tokens.cardBody)
+                .lineLimit(bodyLineLimit(standard: 8, compact: 5))
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         } else {
@@ -414,7 +443,7 @@ struct ItemCardView: View {
             // shorter hits won't read stale long-text highlights.
             codeAwareBody(text: String((item.plainText ?? "").prefix(300)), cap: 1_500)
                 .font(Tokens.cardBody)
-                .lineLimit(bodyLineLimit(standard: 11, compact: 6))
+                .lineLimit(bodyLineLimit(standard: 8, compact: 5))
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -467,10 +496,12 @@ struct ItemCardView: View {
         guard let range = snippet.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else {
             return Text(snippet)
         }
-        let before = String(snippet[snippet.startIndex..<range.lowerBound])
-        let match = String(snippet[range])
-        let after = String(snippet[range.upperBound..<snippet.endIndex])
-        return Text(before) + Text(match).foregroundColor(.accentColor).fontWeight(.semibold) + Text(after)
+        var attributed = AttributedString(snippet)
+        if let lower = AttributedString.Index(range.lowerBound, within: attributed),
+           let upper = AttributedString.Index(range.upperBound, within: attributed) {
+            SearchHighlightStyle.apply(to: &attributed[lower..<upper])
+        }
+        return Text(attributed)
     }
 
     @ViewBuilder
@@ -482,7 +513,7 @@ struct ItemCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
                     LinkFaviconView(item: item, store: store)
-                    Text(item.linkTitle ?? URL(string: item.plainText ?? "")?.host ?? "Link")
+                    Text(item.linkTitle ?? URL(string: item.plainText ?? "")?.host ?? String(localized: "Link"))
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(bodyLineLimit(standard: 2, compact: 1))
                         .multilineTextAlignment(.leading)
@@ -491,7 +522,7 @@ struct ItemCardView: View {
                 Text(String((item.plainText ?? "").prefix(1_500)))
                     .font(Tokens.bodyMono)
                     .foregroundStyle(.secondary)
-                    .lineLimit(bodyLineLimit(standard: 8, compact: 3))
+                    .lineLimit(bodyLineLimit(standard: 5, compact: 3))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
             }
@@ -519,6 +550,8 @@ struct ItemCardView: View {
                 .lineLimit(1)
         }
         .foregroundStyle(.tertiary)
+        // 给右下角收藏板锦带让位, 长域名不压到锦带上。
+        .padding(.trailing, pinboardTint?.isEmpty == false ? 22 : 0)
     }
 
     private var footerGlyph: String {
@@ -537,16 +570,16 @@ struct ItemCardView: View {
             if item.sizeBytes > 100_000 {
                 return ByteCountFormatter.string(fromByteCount: Int64(item.sizeBytes), countStyle: .file)
             }
-            return "\(item.plainText?.count ?? 0) characters"
+            return String(format: String(localized: "%d characters"), item.plainText?.count ?? 0)
         case .link:
-            return URL(string: item.plainText ?? "")?.host ?? "Link"
+            return URL(string: item.plainText ?? "")?.host ?? String(localized: "Link")
         case .image:
-            return "Image"
+            return String(localized: "Image")
         case .file:
             let count = item.plainText?.components(separatedBy: "\n").count ?? 1
-            return count == 1 ? "1 file" : "\(count) files"
+            return count == 1 ? String(localized: "1 file") : String(format: String(localized: "%d files"), count)
         case .color:
-            return "Color"
+            return String(localized: "Color")
         }
     }
 }
@@ -785,5 +818,38 @@ struct CardThumbnail: View {
                 }
             }
         }
+    }
+}
+
+
+/// 文本里有 Unicode 制表符或方块元素 (U+2500–U+259F) 时返回 true, 卡片改用等宽字体。
+/// 只看前 300 个字符, 与卡片显示的范围一致。
+func containsBoxDrawing(_ text: String) -> Bool {
+    for scalar in text.unicodeScalars.prefix(300) where (0x2500...0x259F).contains(scalar.value) {
+        return true
+    }
+    return false
+}
+
+/// 收藏板归属锦带: 一条斜跨卡片右下角的主题色带, 两端由卡片圆角裁掉。
+private struct CornerRibbon: View {
+    let color: Color
+    var compact: Bool = false
+
+    var body: some View {
+        // 锦带中线到卡片角的距离 (沿对角线), 和锦带宽度。
+        let inset: CGFloat = compact ? 14 : 18
+        let thickness: CGFloat = compact ? 7 : 9
+        Rectangle()
+            .fill(color)
+            .frame(width: 120, height: thickness)
+            .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
+            .rotationEffect(.degrees(-45))
+            // 以卡片右下角为原点, 中心沿对角线往里收 inset。
+            .position(x: 0, y: 0)
+            .frame(width: 0, height: 0)
+            .offset(x: -inset / 2.squareRoot(), y: -inset / 2.squareRoot())
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

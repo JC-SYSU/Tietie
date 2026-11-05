@@ -170,7 +170,7 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
 
 @MainActor
 final class ShelfPanelController: NSObject, NSWindowDelegate {
-    static let shelfHeight: CGFloat = 352
+    static let shelfHeight: CGFloat = 308 // 352 - 44: 跟随 Tokens.cardHeight 244 → 200
     /// Panel height while `SettingsStore.compactShelf` is on, sized to `Tokens.compactCardHeight`
     /// plus the same header/divider/padding chrome `shelfHeight` allows for above the
     /// (shorter) card row. `ShelfHeader` isn't shortened in compact mode, so the fixed

@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 
 enum Tokens {
     static let cardWidth: CGFloat = 184
-    static let cardHeight: CGFloat = 244
+    /// 244 → 200: 面板整体降高 (用户要求不放大字号而是降低面板), 正文 11 → 8 行。
+    static let cardHeight: CGFloat = 200
     static let cardGap: CGFloat = 12
     static let cardRadius: CGFloat = 10
     static let shelfPadding: CGFloat = 20
@@ -18,6 +19,11 @@ enum Tokens {
     static let compactCardHeight: CGFloat = 168
     static let compactCardGap: CGFloat = 8
     static let compactShelfPadding: CGFloat = 14
+
+    /// 卡头 app 色带高度 (色带内放图标 + app 名 + 时间)。
+    static let cardBandHeight: CGFloat = 30
+    static let compactCardBandHeight: CGFloat = 24
+    static func cardBandHeight(compact: Bool) -> CGFloat { compact ? compactCardBandHeight : cardBandHeight }
 
     static func cardWidth(compact: Bool) -> CGFloat { compact ? compactCardWidth : cardWidth }
     static func cardHeight(compact: Bool) -> CGFloat { compact ? compactCardHeight : cardHeight }

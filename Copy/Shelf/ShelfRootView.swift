@@ -44,7 +44,7 @@ struct ShelfRootView: View {
             ShelfHeader(viewModel: viewModel)
                 // Above the cards so the search suggestions dropdown floats over them.
                 .zIndex(1)
-            Divider()
+            // 头部与卡片之间不画分隔线, 靠留白分开。
             ShelfItemsRow(viewModel: viewModel)
             if showsLegend {
                 KeyboardLegend(pageIndex: viewModel.pageIndex, pageCount: viewModel.pageCount)
@@ -720,13 +720,14 @@ private struct ShelfItemsRow: View {
         }
     }
 
-    /// 该方向还有页面时渲染边缘箭头 (方向 -1 = 上一页, +1 = 下一页), 否则不占位。
+    /// 多于一页时两侧都放翻页按钮 (方向 -1 = 上一页, +1 = 下一页); 到头的一侧变灰、
+    /// 不可点, 位置不变。只有一页时两侧都不显示。
     @ViewBuilder
     private func pageEdgeControl(_ direction: Int, capacity: Int) -> some View {
         let pageCount = PageCapacity.pageCount(itemCount: viewModel.items.count, capacity: capacity)
         let hasPage = direction < 0 ? viewModel.pageIndex > 0 : viewModel.pageIndex < pageCount - 1
-        if hasPage {
-            PageEdgeButton(direction: direction) {
+        if pageCount > 1 {
+            PageEdgeButton(direction: direction, enabled: hasPage) {
                 viewModel.flipPage(direction: direction, capacity: capacity)
             }
         }
@@ -737,22 +738,24 @@ private struct ShelfItemsRow: View {
 /// 与滚轮翻页共用 `flipPage`, 滑动动画与触感反馈保持一致。
 private struct PageEdgeButton: View {
     let direction: Int
+    var enabled: Bool = true
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary.opacity(hovering ? 0.9 : 0.5))
-                .frame(width: 24, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(.primary.opacity(hovering ? 0.08 : 0.0))
-                )
-                .contentShape(Rectangle())
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.primary.opacity(enabled ? (hovering ? 0.9 : 0.7) : 0.25))
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Color(nsColor: .windowBackgroundColor).opacity(enabled ? 0.85 : 0.5)))
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(enabled ? 0.18 : 0), radius: 3, y: 1)
+                .scaleEffect(hovering && enabled ? 1.08 : 1)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .help(direction < 0 ? Text("Previous page") : Text("Next page"))
@@ -839,7 +842,7 @@ private struct ShelfEmptyState: View {
                 HStack(spacing: 14) {
                     KeyHint(key: KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⌥⌘V", label: "Open Copy")
                     KeyHint(key: "↩", label: "Paste")
-                    KeyHint(key: "Space", label: "Preview")
+                    KeyHint(key: String(localized: "Space"), label: String(localized: "Preview"))
                 }
                 .padding(.top, 2)
             }
@@ -859,7 +862,7 @@ private struct KeyboardLegend: View {
     var body: some View {
         HStack(spacing: 14) {
             KeyHint(key: "↩", label: String(localized: "Paste"))
-            KeyHint(key: "Space", label: String(localized: "Preview"))
+            KeyHint(key: String(localized: "Space"), label: String(localized: "Preview"))
             KeyHint(key: "⇧↩", label: String(localized: "Plain text"))
             KeyHint(key: "⌘⌫", label: String(localized: "Delete"))
             Spacer(minLength: 8)

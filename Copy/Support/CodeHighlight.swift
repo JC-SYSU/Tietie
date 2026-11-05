@@ -115,20 +115,65 @@ final class SearchSnippetCache {
     }
 }
 
-/// 命中窗口渲染成 Text: 查询词用强调色加粗 (与 OCR 摘要同一套样式), 被截断的一端加 "…"。
-func searchSnippetText(_ snippet: SearchSnippet) -> Text {
-    let chars = Array(snippet.text)
-    var result = Text(verbatim: snippet.truncatedStart ? "…" : "")
-    var cursor = 0
-    for range in snippet.highlights where range.lowerBound >= cursor && range.upperBound <= chars.count {
-        if range.lowerBound > cursor {
-            result = result + Text(verbatim: String(chars[cursor..<range.lowerBound]))
-        }
-        result = result + Text(verbatim: String(chars[range])).foregroundColor(.accentColor).fontWeight(.semibold)
-        cursor = range.upperBound
+/// 搜索命中处的样式: 半透明黄底 + 加粗, 文字颜色不动, 代码条目的语法着色仍然可见。
+/// 卡片、OCR 摘要共用。
+enum SearchHighlightStyle {
+    static let background = Color.yellow.opacity(0.45)
+
+    static func apply(to run: inout AttributedSubstring) {
+        run.swiftUI.backgroundColor = background
+        run.inlinePresentationIntent = .stronglyEmphasized
     }
-    if cursor < chars.count {
-        result = result + Text(verbatim: String(chars[cursor...]))
+}
+
+/// 搜索命中窗口的语法着色 token。窗口文字随查询变化, 按 条目 + 窗口文字 缓存,
+/// 免得 SwiftUI 每次求值卡片 body 都重跑一遍正则。
+@MainActor
+final class SnippetTokenCache {
+    static let shared = SnippetTokenCache()
+
+    private struct Key: Hashable {
+        let uuid: String
+        let text: String
     }
-    return snippet.truncatedEnd ? result + Text(verbatim: "…") : result
+
+    private var entries: [Key: [HighlightToken]] = [:]
+    private let capacity = 500
+
+    func tokens(for text: String, uuid: String, language: CodeLanguage) -> [HighlightToken] {
+        let key = Key(uuid: uuid, text: text)
+        if let cached = entries[key] { return cached }
+        let made = SyntaxHighlighter.tokens(for: text, language: language)
+        if entries.count >= capacity { entries.removeAll() }
+        entries[key] = made
+        return made
+    }
+}
+
+/// 命中窗口渲染成 Text: 查询词叠 `SearchHighlightStyle`, 有 `tokens` (窗口文字上的语法
+/// 着色, UTF-16 区间) 时同时着色; 被截断的一端加 "…"。
+func searchSnippetText(_ snippet: SearchSnippet, tokens: [HighlightToken] = []) -> Text {
+    var body = AttributedString(snippet.text)
+    let text = snippet.text
+    let utf16 = text.utf16
+    for token in tokens where token.kind != .plain {
+        guard token.range.location >= 0, token.range.location + token.range.length <= utf16.count,
+              let lo16 = utf16.index(utf16.startIndex, offsetBy: token.range.location, limitedBy: utf16.endIndex),
+              let hi16 = utf16.index(lo16, offsetBy: token.range.length, limitedBy: utf16.endIndex),
+              let lo = String.Index(lo16, within: text), let hi = String.Index(hi16, within: text),
+              let alo = AttributedString.Index(lo, within: body), let ahi = AttributedString.Index(hi, within: body)
+        else { continue }
+        body[alo..<ahi].swiftUI.foregroundColor = CodeHighlightPalette.color(for: token.kind)
+    }
+    // highlights 以 Character 计。
+    let chars = Array(text.indices) + [text.endIndex]
+    for range in snippet.highlights where range.lowerBound >= 0 && range.upperBound < chars.count {
+        guard let lo = AttributedString.Index(chars[range.lowerBound], within: body),
+              let hi = AttributedString.Index(chars[range.upperBound], within: body) else { continue }
+        SearchHighlightStyle.apply(to: &body[lo..<hi])
+    }
+    var result = AttributedString(snippet.truncatedStart ? "…" : "")
+    result.append(body)
+    if snippet.truncatedEnd { result.append(AttributedString("…")) }
+    return Text(result)
 }

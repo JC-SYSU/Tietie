@@ -35,7 +35,11 @@ struct SearchTokenField: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.25))
+                .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(focused ? 0 : 0.1), lineWidth: 0.5)
         )
         .overlay(alignment: .topLeading) {
             if viewModel.suggestionsVisible {
