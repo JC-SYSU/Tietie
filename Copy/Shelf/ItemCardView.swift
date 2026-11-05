@@ -113,6 +113,12 @@ struct ItemCardView: View {
             .padding(compact ? 8 : 10)
         }
         .frame(width: Tokens.cardWidth(compact: compact), height: Tokens.cardHeight(compact: compact), alignment: .topLeading)
+        // ⌘ 编号舞台下卡片内容变成「磨砂」: 降饱和 + 轻微模糊。正文变成底纹, 不再切碎
+        // 编号; app 色带的颜色变淡, 不会和浅蓝罩色混成橄榄绿、灰粉。数值为 1 / 0 时
+        // 等于没加, 视图结构不变, 才能跟着舞台一起渐变。
+        .saturation(numberStage == nil ? 1 : 0.35)
+        .blur(radius: numberStage == nil ? 0 : (numberStage == .dimmed ? 3.5 : 2.5))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: numberStage)
         // M7: deliberately NOT routed through `glassSurface` even on macOS 26. Cards
         // are dense, content-bearing surfaces (up to 11 lines of mono-spaced clipboard
         // text) shown many-at-a-time in a scrolling row — exactly the case Apple's
@@ -916,6 +922,7 @@ private struct CardNumberStageOverlay: View {
     let isSelected: Bool
     let compact: Bool
     let reduceMotion: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @State private var shown = false
 
     var body: some View {
@@ -942,7 +949,10 @@ private struct CardNumberStageOverlay: View {
     private static let candidateGradient = LinearGradient(
         colors: [Color(red: 168 / 255, green: 216 / 255, blue: 1), Color(red: 180 / 255, green: 184 / 255, blue: 1)],
         startPoint: .topLeading, endPoint: .bottomTrailing)
-    /// 数字阴影的深蓝 #1E3A8A, 和罩色右下的长春花蓝同一色相方向。
+    /// 数字的深蓝渐变, 和罩色右下的长春花蓝同一色相方向。
+    private static let digitTop = Color(red: 30 / 255, green: 64 / 255, blue: 175 / 255)
+    private static let digitBottom = Color(red: 59 / 255, green: 79 / 255, blue: 207 / 255)
+    /// 深色外观下白字的阴影色。
     private static let digitShadow = Color(red: 30 / 255, green: 58 / 255, blue: 138 / 255)
     /// ⌘ 数字够不到的卡: 冷灰 #9AA3B5, 不压暗, 只让它们看起来不在候选里。
     private static let inactiveWash = Color(red: 154 / 255, green: 163 / 255, blue: 181 / 255)
@@ -956,16 +966,18 @@ private struct CardNumberStageOverlay: View {
         }
     }
 
-    /// 只有编号数字, 没有底座, 白字配深蓝阴影。所有卡片同一种样式, 选中的卡不另外着色。
+    /// 只有编号数字, 没有底座。浅色外观: 深蓝渐变字 (#1E40AF → #3B4FCF) + 白色光晕,
+    /// 浅蓝底上对比度够; 深色外观卡片是深灰, 改用白字 + 深蓝阴影。所有卡片同一种样式,
+    /// 选中的卡靠原有的蓝色描边区分。
     private func keycap(_ number: Int) -> some View {
         Text(verbatim: "\(number)")
-            .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
+            .font(.system(size: compact ? 28 : 40, weight: .heavy, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(.white)
-        // 一圈淡白光提亮字面, 两层深蓝阴影: 贴身的一层勾出字形, 外面一层大范围柔光,
-        // 让白字在浅蓝底上立得住。
-        .shadow(color: .white.opacity(0.4), radius: 4)
-        .shadow(color: Self.digitShadow.opacity(0.55), radius: 1.5, y: 1)
-        .shadow(color: Self.digitShadow.opacity(0.4), radius: 10)
+            .foregroundStyle(colorScheme == .dark
+                             ? AnyShapeStyle(Color.white)
+                             : AnyShapeStyle(LinearGradient(colors: [Self.digitTop, Self.digitBottom],
+                                                            startPoint: .top, endPoint: .bottom)))
+            .shadow(color: colorScheme == .dark ? Self.digitShadow.opacity(0.8) : .white.opacity(0.9), radius: 1, y: 0.5)
+            .shadow(color: colorScheme == .dark ? Self.digitShadow.opacity(0.6) : .white.opacity(0.7), radius: 8)
     }
 }
