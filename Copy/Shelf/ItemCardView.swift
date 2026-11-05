@@ -909,7 +909,7 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮), 中间是发光的快捷键文字「⌘1」。
+/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮) 加浅蓝罩色, 中间是发光的编号数字。
 /// 文字依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
@@ -937,26 +937,31 @@ private struct CardNumberStageOverlay: View {
         .accessibilityHidden(true)
     }
 
-    /// 压暗到看得清内容: 编号卡边缘 0.32、中心 0.20; ⌘ 数字够不到的卡再暗一档。
+    /// 待选卡片的浅蓝罩色 (#8CC2FF), 叠在压暗层上面, 表示「这些卡都在候选中」。
+    private static let candidateTint = Color(red: 0.55, green: 0.76, blue: 1.0)
+
+    /// 压暗到看得清内容: 编号卡边缘 0.32、中心 0.20, 再叠 0.5 的浅蓝;
+    /// ⌘ 数字够不到的卡只压暗、不叠蓝, 而且暗一档。
     private var scrim: some View {
         let dimmed = stage == .dimmed
-        return RadialGradient(
-            colors: [Color.black.opacity(dimmed ? 0.38 : 0.20), Color.black.opacity(dimmed ? 0.46 : 0.32)],
-            center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
+        return ZStack {
+            RadialGradient(
+                colors: [Color.black.opacity(dimmed ? 0.38 : 0.20), Color.black.opacity(dimmed ? 0.46 : 0.32)],
+                center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
+            if !dimmed {
+                Self.candidateTint.opacity(0.5)
+            }
+        }
     }
 
-    /// 只有快捷键文字「⌘N」, 没有底座。白字配上一版的白色外发光; 卡片压暗后仍偏浅,
+    /// 只有编号数字, 没有底座。白字配上一版的白色外发光; 卡片压暗后仍偏浅,
     /// 白字单靠发光对比度不够, 所以下面再垫一层柔和的深色晕。所有卡片同一种样式,
     /// 选中的卡不另外着色。
     private func keycap(_ number: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 2) {
-            Text(verbatim: "⌘")
-                .font(.system(size: compact ? 18 : 24, weight: .bold, design: .rounded))
-            Text(verbatim: "\(number)")
-                .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
-                .monospacedDigit()
-        }
-        .foregroundStyle(.white)
+        Text(verbatim: "\(number)")
+            .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(.white)
         .shadow(color: .white.opacity(0.55), radius: 6)
         .shadow(color: .black.opacity(0.45), radius: 10)
         .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
