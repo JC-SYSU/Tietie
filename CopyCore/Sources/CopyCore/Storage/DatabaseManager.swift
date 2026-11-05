@@ -135,6 +135,21 @@ public final class DatabaseManager {
             try db.execute(sql: "INSERT INTO search_meta(key, value) VALUES ('stamp', ?)",
                            arguments: [SearchText.stamp])
         }
+        // 性能 (实测见提交说明):
+        // - (isFavorite, lastUsedAt): 搜索和历史浏览都分「收藏段 + 其余段」两条查询。没有它,
+        //   收藏段即使一条收藏都没有也要按 lastUsedAt 扫完全表、逐行回表读 isFavorite。
+        // - (appBundleID, appName): distinctApps 的 GROUP BY 只读索引, 不回表。
+        // - 删掉 item_fts: 搜索早已改走 item_search, 没有代码读它; 但 GRDB 的同步触发器对
+        //   item 的每次 UPDATE (touch、设收藏) 都把整段文本删掉重建, 长条目要几十毫秒。
+        //   DROP TABLE 会连带删掉 FTS5 的影子表; 释放的页留在文件里供以后复用。
+        migrator.registerMigration("v5") { db in
+            try db.execute(sql: """
+                CREATE INDEX item_on_isFavorite_lastUsedAt ON item(isFavorite, lastUsedAt);
+                CREATE INDEX item_on_appBundleID_appName ON item(appBundleID, appName);
+                """)
+            try db.dropFTS5SynchronizationTriggers(forTable: "item_fts")
+            try db.drop(table: "item_fts")
+        }
         return migrator
     }
 

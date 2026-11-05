@@ -2,7 +2,7 @@ import XCTest
 @testable import CopyCore
 
 final class EdgeCaseTests: XCTestCase {
-    func testSearchWithFTSSpecialCharactersDoesNotThrow() throws {
+    func testSearchWithQuerySyntaxCharactersDoesNotThrow() throws {
         let store = try makeTempStore()
         _ = try store.save(makeText("quoted \"phrase\" here"))
         XCTAssertNoThrow(try store.search("\"quoted"))

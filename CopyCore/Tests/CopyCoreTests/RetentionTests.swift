@@ -103,7 +103,7 @@ final class RetentionTests: XCTestCase {
 
         // Search for the link title
         let results = try store.search("Example")
-        XCTAssertEqual(results.count, 1, "Should find item by link title via FTS")
+        XCTAssertEqual(results.count, 1, "Should find item by link title")
         XCTAssertEqual(results[0].id, item.id)
     }
 

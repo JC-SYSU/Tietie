@@ -4,7 +4,7 @@ import SwiftUI
 /// The shelf's faceted search field: a row of facet pills followed by a text field, with a
 /// suggestions dropdown floating below while typing. Selecting a suggestion (click, or ⏎ on
 /// the keyboard-highlighted row via `AppCoordinator.onKeyEvent`) commits a pill; the trailing
-/// text FTS-searches content. Copy's own take on token search — glass dropdown, electric-blue
+/// text searches content. Copy's own take on token search — glass dropdown, electric-blue
 /// highlight, quiet chips (no colored edge stripes).
 struct SearchTokenField: View {
     @Bindable var viewModel: ShelfViewModel

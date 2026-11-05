@@ -281,11 +281,13 @@ public struct ItemStore {
     }
 
     /// Distinct apps that appear in the history, most-copied first — the source for the
-    /// search field's app suggestions.
+    /// search field's app suggestions. 同一 bundle 有过多个名字 (app 改名) 时取最近一条
+    /// 记录的名字: SQLite 规定与 max() 同查的裸列取自 max 所在行, 所以 `max(id)` 让 `n`
+    /// 确定地来自 id 最大的那行, 不随扫描顺序 (表扫描还是索引扫描) 变化。
     public func distinctApps() throws -> [AppUsage] {
         try writer.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT appBundleID AS b, appName AS n, COUNT(*) AS c
+                SELECT appBundleID AS b, appName AS n, COUNT(*) AS c, max(id) AS latest
                 FROM item
                 WHERE appBundleID IS NOT NULL AND appBundleID <> ''
                 GROUP BY appBundleID
@@ -594,7 +596,7 @@ public struct ItemStore {
     /// `public.rtf` representation alongside the plain-text representation, instead of
     /// plain text alone. Deliberately takes pre-encoded `rtfData` rather than an
     /// `NSAttributedString` — CopyCore stays Foundation-only, so RTF encoding happens
-    /// in the app layer, not here. Dedup/FTS/hash all key on `plainText`, exactly like
+    /// in the app layer, not here. Dedup/search/hash all key on `plainText`, exactly like
     /// the plain path, so a rich edit that happens to match an existing plain (or rich)
     /// item's content still dedups against it.
     @discardableResult

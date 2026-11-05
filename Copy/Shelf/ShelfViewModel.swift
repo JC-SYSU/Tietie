@@ -276,7 +276,7 @@ final class ShelfViewModel {
         }
 
         if filter.hasText {
-            // Text search is one-shot (FTS); re-runs whenever the query changes.
+            // Text search is one-shot; re-runs whenever the query changes.
             isPaged = true
             apply((try? store.search(filter: filter, limit: settings.candidateLimit, favoritesFirst: settings.favoritesEnabled)) ?? [])
         } else if searchQuery.tokens.isEmpty, case .pinboard(let id) = tab {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// A faceted shelf-search query: optional free text (FTS over plainText/title/OCR) plus
+/// A faceted shelf-search query: optional free text (normalized substring match, see SearchText) plus
 /// zero or more facets, combined with AND. Built by the app's token field and consumed by
 /// `ItemStore.search(filter:)` (text present) or `ItemStore.observeRecent(filter:)` (text
 /// empty, so results stay live). Within a facet the sets are OR (kind IN …, pinboardId IN …);
@@ -45,7 +45,7 @@ public struct SearchFilter: Equatable, Sendable {
             && pinboardIDs.isEmpty
     }
 
-    /// Whether there is any free text to FTS-match (facets alone don't need FTS).
+    /// Whether there is any free text to match (facets alone don't need a text match).
     public var hasText: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

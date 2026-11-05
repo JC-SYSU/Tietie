@@ -180,3 +180,59 @@ final class SearchTextStampTests: XCTestCase {
         XCTAssertFalse(stamp.contains("(?)"), stamp)
     }
 }
+
+/// 迁移 v5: 两个性能索引 + 删除不再使用的 item_fts。
+final class SearchIndexMigrationTests: XCTestCase {
+    private func manager() throws -> (DatabaseManager, ItemStore) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("CopyTests-\(UUID().uuidString)")
+        let dbm = try DatabaseManager(directory: dir)
+        return (dbm, ItemStore(writer: dbm.writer, blobs: BlobStore(directory: dbm.blobsDirectory)))
+    }
+
+    func testItemFTSAndItsTriggersAreGone() throws {
+        let (dbm, _) = try manager()
+        try dbm.writer.read { db in
+            let names = try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE name LIKE '%item_fts%'")
+            XCTAssertEqual(names, [])
+        }
+    }
+
+    /// 计划断言: 防止索引被误删或 SQLite 规划器改走全表扫描时性能悄悄退回去。
+    func testFavoriteSplitQueriesUseTheCompositeIndex() throws {
+        let (dbm, _) = try manager()
+        try dbm.writer.read { db in
+            for sql in [
+                "SELECT item.* FROM item JOIN item_search ON item_search.itemId = item.id WHERE item_search.text LIKE '%a%' AND item.isFavorite = 1 ORDER BY item.lastUsedAt DESC",
+                "SELECT * FROM item WHERE isFavorite = 0 ORDER BY lastUsedAt DESC LIMIT 25",
+            ] {
+                let plan = try String.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, adapter: SuffixRowAdapter(fromIndex: 3)).joined(separator: " | ")
+                XCTAssertTrue(plan.contains("item_on_isFavorite_lastUsedAt"), plan)
+            }
+            let apps = try String.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN SELECT appBundleID, appName, COUNT(*), max(id) FROM item
+                WHERE appBundleID IS NOT NULL AND appBundleID <> '' GROUP BY appBundleID
+                """, adapter: SuffixRowAdapter(fromIndex: 3)).joined(separator: " | ")
+            XCTAssertTrue(apps.contains("COVERING INDEX item_on_appBundleID_appName"), apps)
+        }
+    }
+
+    func testTouchAndFavoriteStillWorkWithoutFTS() throws {
+        let (_, store) = try manager()
+        let id = try XCTUnwrap(try store.save(makeText("still searchable")).id)
+        try store.touch(itemID: id)
+        try store.setFavorite(itemID: id, true)
+        XCTAssertEqual(try store.search("searchable").map(\.isFavorite), [true])
+        try store.delete(itemID: id)
+        XCTAssertEqual(try store.search("searchable").count, 0)
+    }
+
+    func testDistinctAppsUsesTheMostRecentNameForABundle() throws {
+        let (_, store) = try manager()
+        _ = try store.save(makeText("one", bundle: "com.openai.codex", app: "Codex"))
+        _ = try store.save(makeText("two", bundle: "com.openai.codex", app: "ChatGPT"))
+        _ = try store.save(makeText("three", bundle: "com.openai.codex", app: "ChatGPT"))
+        let apps = try store.distinctApps()
+        XCTAssertEqual(apps.map(\.name), ["ChatGPT"])
+        XCTAssertEqual(apps.map(\.count), [3])
+    }
+}

@@ -24,7 +24,7 @@ final class UndoSnapshotTests: XCTestCase {
         // Representations survive the round trip.
         let reps = try store.representations(forItemID: restored!.id!)
         XCTAssertEqual(reps.map { String(decoding: $0.data, as: UTF8.self) }, ["undo me please"])
-        // And it is searchable again (FTS reindexed on re-insert).
+        // And it is searchable again (item_search refilled by the insert trigger).
         XCTAssertEqual(try store.search("undo").map(\.plainText), ["undo me please"])
     }
 

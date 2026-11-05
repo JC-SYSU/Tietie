@@ -116,7 +116,7 @@ public enum SearchToken: Equatable, Identifiable, Sendable {
     }
 }
 
-/// The full search: committed facet tokens plus trailing free text (FTS over
+/// The full search: committed facet tokens plus trailing free text (substring match over
 /// plainText/title/OCR). Combined into a `SearchFilter` for the store.
 public struct SearchQuery: Equatable, Sendable {
     public var tokens: [SearchToken]

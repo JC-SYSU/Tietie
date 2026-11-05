@@ -39,7 +39,7 @@ final class RenameAndCreateTests: XCTestCase {
         XCTAssertEqual(try store.recentItems(limit: 10).count, 2)
         XCTAssertEqual(saved.plainText, "fresh after migration")
 
-        // Prove the v1 row with "old row" is still searchable via FTS after the v2 rebuild.
+        // Prove the v1 row with "old row" is still searchable after migrating to the latest schema.
         let oldRowSearchResults = try store.search("old")
         XCTAssertFalse(oldRowSearchResults.isEmpty, "v1 row's plainText should be searchable after v2 migration rebuild")
         XCTAssertTrue(oldRowSearchResults.contains { $0.uuid == "v1-uuid" })
@@ -105,15 +105,15 @@ final class RenameAndCreateTests: XCTestCase {
         XCTAssertEqual(item.displayTitle, item.menuTitle, "an empty title must fall back to menuTitle")
     }
 
-    func testRecognizedTextColumnIsIndexedByFTS() throws {
+    func testRecognizedTextColumnIsSearchable() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CopyTests-\(UUID().uuidString)")
         let dbm = try DatabaseManager(directory: dir)
         let store = ItemStore(writer: dbm.writer, blobs: BlobStore(directory: dbm.blobsDirectory))
         let saved = try store.save(makeText("a screenshot"))
 
-        // Simulate what Task 2's setRecognizedText will do, to prove the v2 FTS
-        // rebuild already indexes this column.
+        // A raw UPDATE of recognizedText (bypassing setRecognizedText) must still reach
+        // search: the item_search trigger watches the column itself.
         try dbm.writer.write { db in
             try db.execute(
                 sql: "UPDATE item SET recognizedText = ? WHERE id = ?",
