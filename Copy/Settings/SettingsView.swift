@@ -1,65 +1,27 @@
 import CopyCore
 import SwiftUI
 
-/// Root content of the Settings window (hosted by `SettingsWindowController`): a
-/// System-Settings-style sidebar (`NavigationSplitView`) of five sections, each backed by
-/// the shared `SettingsStore` (see `AppCoordinator.settings`).
-///
-/// The window is tinted electric-blue (`Tokens.electricBlue`) so the sidebar selection and
-/// all controls read as one brand accent, but it otherwise stays native: it follows the
-/// system appearance and each pane's controls sit in a grouped `Form`. That last choice is
-/// deliberate and unchanged from the tabbed version — unlike the shelf/paste stack/sheets,
-/// Settings keeps its content on the opaque grouped-form background rather than glass, the
-/// same way Apple's System Settings reserves glass for chrome (the sidebar) and not the
-/// settings content itself.
+/// 每个标签页的 SwiftUI 内容, 由 `SettingsWindowController` 分别装进 `NSTabViewController`
+/// 的子页面。窗口外观 (浅色/深色) 跟随 `SettingsStore.shelfTheme`, 强调色统一用品牌蓝。
 struct SettingsView: View {
+    let section: SettingsSection
     let settings: SettingsStore
     let store: ItemStore
-    @State private var selection: SettingsSection? = .general
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(SettingsSection.allCases) { section in
-                    HStack(spacing: 8) {
-                        SettingsSectionTile(systemImage: section.systemImage, color: section.tileColor)
-                        Text(section.title)
-                    }
-                    .padding(.vertical, 2)
-                    .tag(section)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 178, ideal: 196, max: 230)
-        } detail: {
-            detail(for: selection ?? .general)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .tint(Tokens.electricBlue)
-        .frame(minWidth: 640, minHeight: 460)
+        content
+            .tint(Tokens.electricBlue)
     }
 
-    /// About leads with its own centered identity block; the other four panes get the
-    /// standard hero above their grouped `Form`.
-    @ViewBuilder
-    private func detail(for section: SettingsSection) -> some View {
+    @ViewBuilder private var content: some View {
         switch section {
-        case .general:
-            pane(.general) { GeneralSettings(settings: settings) }
-        case .shortcuts:
-            pane(.shortcuts) { ShortcutsSettings(settings: settings) }
-        case .history:
-            pane(.history) { HistorySettings(settings: settings, store: store) }
-        case .privacy:
-            pane(.privacy) { PrivacySettings(settings: settings) }
-        case .about:
-            AboutSettings(settings: settings)
-        }
-    }
-
-    private func pane<Content: View>(_ section: SettingsSection, @ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            SettingsPaneHeader(section: section)
-            content()
+        case .general: GeneralSettings(settings: settings)
+        case .cards: CardsSettings(settings: settings)
+        case .copyPaste: CopyPasteSettings(settings: settings)
+        case .shortcuts: ShortcutsSettings(settings: settings)
+        case .history: HistorySettings(settings: settings, store: store)
+        case .privacy: PrivacySettings(settings: settings)
+        case .about: AboutSettings(settings: settings)
         }
     }
 }

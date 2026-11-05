@@ -1,30 +1,64 @@
 import KeyboardShortcuts
 import SwiftUI
 
-/// The hotkey recorders, split out of General into their own pane. The `.toggleShelf`
-/// recorder still fires `onShelfHotkeyChange` so `AppDelegate`'s anti-stranding guard
-/// re-runs when the shelf summon hotkey changes (see `SettingsStore.onShelfHotkeyChange`);
-/// the General pane re-reads whether that shortcut is set in its own `onAppear` to gate the
-/// "Hide the Menu Bar Icon" toggle.
+/// 「快捷键」页。The `.toggleShelf` recorder still fires `onShelfHotkeyChange` so
+/// `AppDelegate`'s anti-stranding guard re-runs when the shelf summon hotkey changes (see
+/// `SettingsStore.onShelfHotkeyChange`); the General pane re-reads whether that shortcut is
+/// set in its own `onAppear` to gate the "Hide the Menu Bar Icon" toggle.
 struct ShortcutsSettings: View {
     @Bindable var settings: SettingsStore
 
     var body: some View {
-        Form {
-            Section {
-                KeyboardShortcuts.Recorder(String(localized: "Open Copy:"), name: .toggleShelf) { _ in
+        SettingsPane {
+            SettingsRow(label: String(localized: "Open Copy:")) {
+                KeyboardShortcuts.Recorder(for: .toggleShelf) { _ in
                     settings.onShelfHotkeyChange?()
                 }
-                KeyboardShortcuts.Recorder(String(localized: "Paste Stack:"), name: .togglePasteStack)
-                KeyboardShortcuts.Recorder(String(localized: "Quick Paste Latest:"), name: .quickPasteLatest)
-                KeyboardShortcuts.Recorder(String(localized: "Paste Latest as Plain Text:"), name: .pasteLatestPlainText)
-                KeyboardShortcuts.Recorder(String(localized: "Next Pinboard:"), name: .nextPinboard)
-            } footer: {
-                Text("Quick Paste Latest pastes your most recent item into the current app without opening Copy; Paste Latest as Plain Text does the same without any formatting. While the shelf is open, hold Option and press a number to paste that card.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            }
+            SettingsRow(label: String(localized: "Paste Stack:")) {
+                KeyboardShortcuts.Recorder(for: .togglePasteStack)
+            }
+            SettingsRow(label: String(localized: "Next Pinboard:")) {
+                KeyboardShortcuts.Recorder(for: .nextPinboard)
+            }
+
+            SettingsDivider()
+
+            SettingsRow(label: String(localized: "Quick Paste Latest:"),
+                        help: String(localized: "Pastes your most recent item into the current app without opening Copy.")) {
+                KeyboardShortcuts.Recorder(for: .quickPasteLatest)
+            }
+            SettingsRow(label: String(localized: "Paste Latest as Plain Text:"),
+                        help: String(localized: "Same, without any formatting.")) {
+                KeyboardShortcuts.Recorder(for: .pasteLatestPlainText)
+            }
+
+            SettingsDivider()
+
+            SettingsRow(label: String(localized: "In the Shelf:")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ShortcutHintLine(keys: "⌥1–9", text: String(localized: "Switch to a tab"))
+                    ShortcutHintLine(keys: "⌘1–9", text: String(localized: "Paste that card"))
+                    ShortcutHintLine(keys: "⌘F", text: String(localized: "Search"))
+                    ShortcutHintLine(keys: "⇧↩", text: String(localized: "Paste as plain text"))
+                }
             }
         }
-        .formStyle(.grouped)
+    }
+}
+
+/// 面板内固定快捷键的一行说明: 键帽 + 文字。
+private struct ShortcutHintLine: View {
+    let keys: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            KeyCap(text: keys)
+                .frame(minWidth: 52, alignment: .leading)
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
     }
 }

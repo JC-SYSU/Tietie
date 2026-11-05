@@ -1,45 +1,28 @@
 import CopyCore
 import SwiftUI
 
-/// Retention window, storage usage, and enrichment toggles. Retention and the toggles are
-/// persisted through `SettingsStore`; the storage block reads/clears history via `store`.
+/// 「历史」页: 保留多久、占用多少空间、清空。保留时长存在 `SettingsStore`, 存储统计和
+/// 清空走 `store`。
 struct HistorySettings: View {
     @Bindable var settings: SettingsStore
     let store: ItemStore
 
     var body: some View {
-        Form {
-            StorageUsageSection(store: store)
-
-            Section {
+        SettingsPane {
+            SettingsRow(label: String(localized: "Keep History:"), help: retentionHelp) {
                 StepSlider(labels: RetentionPeriod.sliderOrder.map(\.title), index: retentionIndex)
-                    .padding(.top, 4)
-                    .padding(.bottom, 2)
-            } header: {
-                Text("Keep History")
-            } footer: {
-                Text(retentionFooter)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .frame(width: SettingsLayout.helpWidth)
+                    // 让左栏标签和滑轨 (StepSlider 内 y=34) 对齐, 默认会落到滑块底部。
+                    .alignmentGuide(.firstTextBaseline) { _ in 38 }
             }
 
-            Section {
-                Toggle(String(localized: "Fetch Link Previews"), isOn: $settings.fetchLinkPreviews)
-            } footer: {
-                Text("Copy loads titles and icons for copied links from the web.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            SettingsDivider()
 
-            Section {
-                Toggle(String(localized: "Recognize Text in Images"), isOn: $settings.recognizeImageText)
-            } footer: {
-                Text("Copy reads text in copied images so you can search and copy it. This runs entirely on your Mac.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            SettingsRow(label: String(localized: "Storage:")) {
+                StorageUsageSection(store: store)
+                    .frame(width: SettingsLayout.helpWidth)
             }
         }
-        .formStyle(.grouped)
     }
 
     /// Bridges the `StepSlider`'s `Int` position to the stored `RetentionPeriod`, using the
@@ -53,10 +36,11 @@ struct HistorySettings: View {
         )
     }
 
-    private var retentionFooter: String {
+    private var retentionHelp: String {
         if settings.retention == .unlimited {
             return String(localized: "Nothing is removed by age. Favorites and pinboard items are always kept.")
         }
-        return String(localized: "Items you haven't used in \(settings.retention.title.lowercased()) are removed. Favorites and pinboard items are always kept.")
+        return String(format: String(localized: "Items unused for %@ are removed. Favorites and pinboard items are always kept."),
+                      settings.retention.title)
     }
 }

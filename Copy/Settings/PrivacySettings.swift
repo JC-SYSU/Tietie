@@ -9,57 +9,59 @@ struct PrivacySettings: View {
     @State private var selectedBundleID: String?
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPane {
+            SettingsRow(label: String(localized: "Screen Sharing:"),
+                        help: String(localized: "Keeps your clipboard history out of screenshots, screen recordings and shared screens.")) {
                 Toggle(String(localized: "Hide Copy windows during screen sharing"), isOn: $settings.hideDuringScreenSharing)
-            } header: {
-                Text("Screen Sharing")
-            } footer: {
-                Text("Keeps your clipboard history out of screen recordings and shared screens.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .toggleStyle(.checkbox)
             }
 
-            Section {
-                if settings.excludedBundleIDs.isEmpty {
-                    Text("No excluded apps")
-                        .foregroundStyle(.secondary)
-                } else {
-                    List(settings.excludedBundleIDs, id: \.self, selection: $selectedBundleID) { bundleID in
-                        excludedAppRow(bundleID)
+            SettingsDivider()
+
+            SettingsRow(label: String(localized: "Excluded Apps:"),
+                        help: String(localized: "Copy records nothing while one of these apps is in front. Concealed content from password managers is never recorded.")) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Group {
+                        if settings.excludedBundleIDs.isEmpty {
+                            // 文字放在列表顶部: 这一行按首行基线和左栏标签对齐,
+                            // 文字居中会把「排除的 App：」拉到列表中间。
+                            Text("No excluded apps")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        } else {
+                            List(settings.excludedBundleIDs, id: \.self, selection: $selectedBundleID) { bundleID in
+                                excludedAppRow(bundleID)
+                            }
+                            .listStyle(.bordered(alternatesRowBackgrounds: true))
+                        }
                     }
-                    .frame(minHeight: 160)
+                    .frame(width: SettingsLayout.helpWidth, height: 150)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+
+                    // 经典的 + / − 按钮条, 贴在列表下沿。
+                    HStack(spacing: 0) {
+                        Button { addExcludedApp() } label: {
+                            Image(systemName: "plus").frame(width: 24, height: 20)
+                        }
+                        .accessibilityLabel(String(localized: "Add App"))
+                        Divider().frame(height: 14)
+                        Button { removeSelectedApp() } label: {
+                            Image(systemName: "minus").frame(width: 24, height: 20)
+                        }
+                        .accessibilityLabel(String(localized: "Remove App"))
+                        .disabled(selectedBundleID == nil)
+                        Spacer()
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: SettingsLayout.helpWidth)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                    .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+                    .offset(y: -1)
                 }
-
-                HStack(spacing: 8) {
-                    Button {
-                        addExcludedApp()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel(String(localized: "Add App"))
-
-                    Button {
-                        removeSelectedApp()
-                    } label: {
-                        Image(systemName: "minus")
-                    }
-                    .accessibilityLabel(String(localized: "Remove App"))
-                    .disabled(selectedBundleID == nil)
-
-                    Spacer()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            } header: {
-                Text("Excluded Apps")
-            } footer: {
-                Text("Copy never records concealed content from password managers.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
     }
 
     private func excludedAppRow(_ bundleID: String) -> some View {

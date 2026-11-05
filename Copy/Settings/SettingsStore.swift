@@ -16,7 +16,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .system: return "Follow System"
+        case .system: return String(localized: "Follow System")
         case .zhHans: return "简体中文"
         case .en: return "English"
         }
@@ -39,7 +39,7 @@ enum CopySound: String, CaseIterable, Identifiable {
     }
 
     var title: String {
-        systemSoundName ?? "Off"
+        systemSoundName ?? String(localized: "Off")
     }
 }
 
@@ -49,9 +49,9 @@ enum ShelfTheme: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .system: return "Follow System"
-        case .light: return "Light"
-        case .dark: return "Dark"
+        case .system: return String(localized: "Follow System")
+        case .light: return String(localized: "Light")
+        case .dark: return String(localized: "Dark")
         }
     }
     var appearance: NSAppearance? {
@@ -105,11 +105,11 @@ enum RetentionPeriod: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .unlimited: return "Unlimited"
-        case .day: return "1 Day"
-        case .week: return "1 Week"
-        case .month: return "1 Month"
-        case .threeMonths: return "3 Months"
+        case .unlimited: return String(localized: "Unlimited")
+        case .day: return String(localized: "1 Day")
+        case .week: return String(localized: "1 Week")
+        case .month: return String(localized: "1 Month")
+        case .threeMonths: return String(localized: "3 Months")
         }
     }
 

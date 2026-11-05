@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// The five panes of the Settings window, in sidebar order. Single source of truth for the
-/// sidebar rows and each pane's hero header (`SettingsPaneHeader`), so a section's icon,
-/// color, and copy are defined once.
+/// 设置窗口顶部工具栏的标签页, 按显示顺序。标签名和图标只在这里定义一次。
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     case general
+    case cards
+    case copyPaste
     case shortcuts
     case history
     case privacy
@@ -15,6 +15,8 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .general: return String(localized: "General")
+        case .cards: return String(localized: "Cards")
+        case .copyPaste: return String(localized: "Copy & Paste")
         case .shortcuts: return String(localized: "Shortcuts")
         case .history: return String(localized: "History")
         case .privacy: return String(localized: "Privacy")
@@ -25,33 +27,12 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
-        case .shortcuts: return "keyboard"
-        case .history: return "clock"
+        case .cards: return "rectangle.on.rectangle"
+        case .copyPaste: return "doc.on.clipboard"
+        case .shortcuts: return "command"
+        case .history: return "clock.arrow.circlepath"
         case .privacy: return "hand.raised"
         case .about: return "info.circle"
-        }
-    }
-
-    /// The rounded-square tile color, in the System Settings idiom. About takes the brand
-    /// accent; the rest use distinct system hues that don't clash with it.
-    var tileColor: Color {
-        switch self {
-        case .general: return .gray
-        case .shortcuts: return .blue
-        case .history: return .orange
-        case .privacy: return .red
-        case .about: return Tokens.electricBlue
-        }
-    }
-
-    /// One-line description shown under the title in the pane hero.
-    var subtitle: String {
-        switch self {
-        case .general: return String(localized: "Appearance, behavior, and startup.")
-        case .shortcuts: return String(localized: "Set the keys that summon Copy and paste for you.")
-        case .history: return String(localized: "How long items are kept and what Copy enriches.")
-        case .privacy: return String(localized: "Keep sensitive apps and shared screens out of history.")
-        case .about: return String(localized: "Version, updates, and project links.")
         }
     }
 }

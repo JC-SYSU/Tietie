@@ -9,43 +9,36 @@ import SwiftUI
 struct StorageUsageSection: View {
     let store: ItemStore
 
-    @State private var usage: [StorageUsage] = []
+    @State private var usage: [StorageUsage]
+
+    /// 同步读一次统计, 设置窗口按内容高度定窗口大小, 首帧就要是最终高度。
+    init(store: ItemStore) {
+        self.store = store
+        _usage = State(initialValue: (try? store.storageBreakdown()) ?? [])
+    }
     @State private var confirmClearAll = false
     @State private var pendingKindClear: StorageCategory?
 
     var body: some View {
-        Group {
-            Section {
-                if categories.isEmpty {
-                    Text("No clearable history")
-                        .foregroundStyle(.secondary)
-                } else {
-                    summary
+        // 不依赖 Form/Section: 设置窗口改成两栏排版后, 这块直接放在「存储：」右栏。
+        VStack(alignment: .leading, spacing: 10) {
+            if categories.isEmpty {
+                Text("No clearable history")
+                    .foregroundStyle(.secondary)
+            } else {
+                summary
+                VStack(spacing: 6) {
                     ForEach(categories) { row($0) }
                 }
-            } header: {
-                Text("Storage")
-            } footer: {
-                Text("Favorites and pinboard items are kept and aren't counted here.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !categories.isEmpty {
-                Section {
-                    Button(role: .destructive) {
-                        confirmClearAll = true
-                    } label: {
-                        HStack {
-                            Text("Clear History")
-                            Spacer()
-                            Text(byteString(totalBytes))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
+                Button(role: .destructive) {
+                    confirmClearAll = true
+                } label: {
+                    Text(String(localized: "Clear History…"))
                 }
+                .controlSize(.regular)
+                .padding(.top, 2)
             }
+            SettingsHelp(String(localized: "Favorites and pinboard items are kept and aren't counted here."))
         }
         .onAppear(perform: reload)
         .confirmationDialog(String(localized: "Clear clipboard history?"), isPresented: $confirmClearAll) {
@@ -101,7 +94,7 @@ struct StorageUsageSection: View {
                 .frame(minWidth: 62, alignment: .trailing)
             IconButton(systemName: "trash", fontSize: 11,
                        size: CGSize(width: 24, height: 22),
-                       help: "Clear \(usage.category.label)") {
+                       help: String(format: String(localized: "Clear %@"), usage.category.label)) {
                 pendingKindClear = usage.category
             }
         }
@@ -176,11 +169,11 @@ enum StorageCategory: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .text: return "Text"
-        case .links: return "Links"
-        case .images: return "Images"
-        case .files: return "Files"
-        case .colors: return "Colors"
+        case .text: return String(localized: "Text")
+        case .links: return String(localized: "Links")
+        case .images: return String(localized: "Images")
+        case .files: return String(localized: "Files")
+        case .colors: return String(localized: "Colors")
         }
     }
 
