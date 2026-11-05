@@ -915,7 +915,7 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 近白的浅蓝渐变罩色, 中间是深蓝圆底座上的白色发光数字。
+/// 编号舞台的卡片遮罩: 近白的浅蓝渐变罩色, 中间是深蓝圆底座上的白色数字。
 /// 文字依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
@@ -966,10 +966,10 @@ private struct CardNumberStageOverlay: View {
     }
 
     /// 圆形实心底座 (深蓝渐变 #1E40AF → #3B4FCF, 上沿一道细高光, 下方一层深蓝投影)
-    /// 上放白色发光数字。底座自带深色, 浅色、深色外观用同一种样式。
+    /// 上放白色数字, 数字不加发光, 边缘保持清晰。底座自带深色, 浅色、深色外观用同一种样式。
     private func keycap(_ number: Int) -> some View {
-        // 36pt: 和卡头 30pt 色带同一量级; 56pt 时占卡宽三成, 比卡片里其他元素大一截。
-        let side: CGFloat = compact ? 28 : 36
+        // 30pt: 和卡头 30pt 色带等高; 56pt 时占卡宽三成, 比卡片里其他元素大一截。
+        let side: CGFloat = compact ? 24 : 30
         return ZStack {
             Circle()
                 .fill(LinearGradient(colors: [Self.digitTop, Self.digitBottom], startPoint: .top, endPoint: .bottom))
@@ -978,11 +978,9 @@ private struct CardNumberStageOverlay: View {
                                              startPoint: .top, endPoint: .center),
                               lineWidth: 1)
             Text(verbatim: "\(number)")
-                .font(.system(size: compact ? 15 : 19, weight: .heavy, design: .rounded))
+                .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.white)
-                .shadow(color: .white.opacity(0.7), radius: 3)
-                .shadow(color: .white.opacity(0.35), radius: 6)
         }
         .frame(width: side, height: side)
         .shadow(color: Self.digitShadow.opacity(0.35), radius: 4, y: 1.5)
