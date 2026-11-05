@@ -909,9 +909,8 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮), 中间一枚大号键帽写着「⌘1」。键帽的
-/// 样式和面板里已有的键帽、翻页按钮一致 (浅色底 + 细边 + 一层小阴影), 选中的卡用强调色
-/// 实底白字, 和选中的标签页同一种样式。键帽依次轻微放大出现 (每张晚 15ms)。
+/// 编号舞台的卡片遮罩: 一层浅压暗 (中心略亮), 中间是发光的快捷键文字「⌘1」。
+/// 文字依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
     let isSelected: Bool
@@ -946,21 +945,20 @@ private struct CardNumberStageOverlay: View {
             center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
     }
 
+    /// 只有快捷键文字「⌘N」, 没有底座。白字配上一版的白色外发光; 卡片压暗后仍偏浅,
+    /// 白字单靠发光对比度不够, 所以下面再垫一层柔和的深色晕。所有卡片同一种样式,
+    /// 选中的卡不另外着色。
     private func keycap(_ number: Int) -> some View {
-        let size = compact ? CGSize(width: 40, height: 32) : CGSize(width: 50, height: 40)
-        let shape = RoundedRectangle(cornerRadius: compact ? 7 : 9, style: .continuous)
-        return HStack(alignment: .firstTextBaseline, spacing: 1) {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
             Text(verbatim: "⌘")
-                .font(.system(size: compact ? 11 : 13, weight: .medium, design: .rounded))
-                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
+                .font(.system(size: compact ? 18 : 24, weight: .bold, design: .rounded))
             Text(verbatim: "\(number)")
-                .font(.system(size: compact ? 16 : 20, weight: .semibold, design: .rounded))
+                .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
         }
-        .frame(width: size.width, height: size.height)
-        .background(shape.fill(isSelected ? Color.accentColor : Color(nsColor: .windowBackgroundColor).opacity(0.95)))
-        .overlay(shape.strokeBorder(Color.primary.opacity(isSelected ? 0 : 0.12), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+        .foregroundStyle(.white)
+        .shadow(color: .white.opacity(0.55), radius: 6)
+        .shadow(color: .black.opacity(0.45), radius: 10)
+        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
     }
 }
