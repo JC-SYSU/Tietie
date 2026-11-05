@@ -915,14 +915,13 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 浅蓝渐变罩色, 中间是白色编号数字。
+/// 编号舞台的卡片遮罩: 近白的浅蓝渐变罩色, 中间是深蓝圆底座上的白色发光数字。
 /// 文字依次轻微放大出现 (每张晚 15ms)。
 private struct CardNumberStageOverlay: View {
     let stage: CardNumberStage
     let isSelected: Bool
     let compact: Bool
     let reduceMotion: Bool
-    @Environment(\.colorScheme) private var colorScheme
     @State private var shown = false
 
     var body: some View {
@@ -944,15 +943,15 @@ private struct CardNumberStageOverlay: View {
         .accessibilityHidden(true)
     }
 
-    /// 待选卡片的罩色: 左上天蓝 #A8D8FF → 右下长春花蓝 #B4B8FF, 色相从 205° 走到 238°,
-    /// 和系统强调蓝同一色系, 又带一点向靛蓝的过渡。叠 0.6 后白卡片变成浅蓝。
+    /// 待选卡片的罩色: 左上 #CFEAFF → 右下 #D6D8FF。由天蓝 #A8D8FF / 长春花蓝 #B4B8FF
+    /// 各掺 45% 白得来, 色相不变 (205° → 238°), 只是更亮、更接近白。
     private static let candidateGradient = LinearGradient(
-        colors: [Color(red: 168 / 255, green: 216 / 255, blue: 1), Color(red: 180 / 255, green: 184 / 255, blue: 1)],
+        colors: [Color(red: 207 / 255, green: 234 / 255, blue: 1), Color(red: 214 / 255, green: 216 / 255, blue: 1)],
         startPoint: .topLeading, endPoint: .bottomTrailing)
-    /// 数字的深蓝渐变, 和罩色右下的长春花蓝同一色相方向。
+    /// 数字底座的深蓝渐变, 和罩色右下的长春花蓝同一色相方向。
     private static let digitTop = Color(red: 30 / 255, green: 64 / 255, blue: 175 / 255)
     private static let digitBottom = Color(red: 59 / 255, green: 79 / 255, blue: 207 / 255)
-    /// 深色外观下白字的阴影色。
+    /// 底座投影色。
     private static let digitShadow = Color(red: 30 / 255, green: 58 / 255, blue: 138 / 255)
     /// ⌘ 数字够不到的卡: 冷灰 #9AA3B5, 不压暗, 只让它们看起来不在候选里。
     private static let inactiveWash = Color(red: 154 / 255, green: 163 / 255, blue: 181 / 255)
@@ -966,18 +965,25 @@ private struct CardNumberStageOverlay: View {
         }
     }
 
-    /// 只有编号数字, 没有底座。浅色外观: 深蓝渐变字 (#1E40AF → #3B4FCF) + 白色光晕,
-    /// 浅蓝底上对比度够; 深色外观卡片是深灰, 改用白字 + 深蓝阴影。所有卡片同一种样式,
-    /// 选中的卡靠原有的蓝色描边区分。
+    /// 圆形实心底座 (深蓝渐变 #1E40AF → #3B4FCF, 上沿一道细高光, 下方一层深蓝投影)
+    /// 上放白色发光数字。底座自带深色, 浅色、深色外观用同一种样式。
     private func keycap(_ number: Int) -> some View {
-        Text(verbatim: "\(number)")
-            .font(.system(size: compact ? 28 : 40, weight: .heavy, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(colorScheme == .dark
-                             ? AnyShapeStyle(Color.white)
-                             : AnyShapeStyle(LinearGradient(colors: [Self.digitTop, Self.digitBottom],
-                                                            startPoint: .top, endPoint: .bottom)))
-            .shadow(color: colorScheme == .dark ? Self.digitShadow.opacity(0.8) : .white.opacity(0.9), radius: 1, y: 0.5)
-            .shadow(color: colorScheme == .dark ? Self.digitShadow.opacity(0.6) : .white.opacity(0.7), radius: 8)
+        let side: CGFloat = compact ? 40 : 56
+        return ZStack {
+            Circle()
+                .fill(LinearGradient(colors: [Self.digitTop, Self.digitBottom], startPoint: .top, endPoint: .bottom))
+            Circle()
+                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0)],
+                                             startPoint: .top, endPoint: .center),
+                              lineWidth: 1)
+            Text(verbatim: "\(number)")
+                .font(.system(size: compact ? 21 : 29, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .shadow(color: .white.opacity(0.7), radius: 5)
+                .shadow(color: .white.opacity(0.35), radius: 10)
+        }
+        .frame(width: side, height: side)
+        .shadow(color: Self.digitShadow.opacity(0.35), radius: 6, y: 2)
     }
 }
