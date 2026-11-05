@@ -269,3 +269,10 @@
 "Images" = "图片";
 "Files" = "文件";
 "Colors" = "颜色";
+
+/* Settings - number hint style */
+"⌘ Numbers:" = "⌘ 编号：";
+"Keycap in Header" = "色带键帽";
+"Keycaps Below Cards" = "底部键帽";
+"Large Numbers" = "大号数字";
+"How card numbers appear while you hold ⌘. Press ⌘ and a number to paste that card." = "按住 ⌘ 时卡片编号的样子。按 ⌘ 加数字直接粘贴那张卡。";

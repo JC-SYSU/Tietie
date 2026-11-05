@@ -47,7 +47,17 @@ struct ShelfRootView: View {
             // 头部与卡片之间不画分隔线, 靠留白分开。
             ShelfItemsRow(viewModel: viewModel)
             if showsLegend {
+                // 底部键帽样式: 按住 ⌘ 时图例淡出, 同一位置换成一排键帽, 每枚正对一张卡。
+                let showsRail = viewModel.numberStageShown && viewModel.settings.numberHintStyle == .keyRail
                 KeyboardLegend(pageIndex: viewModel.pageIndex, pageCount: viewModel.pageCount)
+                    .opacity(showsRail ? 0 : 1)
+                    .overlay {
+                        if showsRail {
+                            NumberRail(viewModel: viewModel)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.16), value: showsRail)
                     .transition(.opacity)
             }
         }
@@ -613,6 +623,7 @@ private struct ShelfItemsRow: View {
                     searchQuery: viewModel.searchQuery.text,
                     isFlashing: viewModel.flashItemID == pair.item.uuid,
                     numberStage: numberStage(forIndex: pair.index),
+                    numberStyle: viewModel.settings.numberHintStyle,
                     canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
                     onClick: { modifiers in viewModel.handleCardClick(pair.item, modifiers: modifiers) },
                     onHoverChanged: { hovering in
@@ -892,5 +903,76 @@ private struct KeyboardLegend: View {
                 .monospacedDigit()
         }
         .foregroundStyle(.secondary)
+    }
+}
+
+
+/// 底部键帽样式: 和卡片行同样的水平排布 (卡宽、间距、内边距、收藏分隔线占位都一致,
+/// 整行居中), 每张卡正下方一枚「⌘1」键帽; 第 10 张起的位置留空。选中的卡键帽用
+/// 强调色实底。键帽依次出现, 每枚晚 15ms。
+private struct NumberRail: View {
+    let viewModel: ShelfViewModel
+
+    var body: some View {
+        let start = viewModel.pageStartIndex
+        let end = min(start + max(1, viewModel.layoutCapacity), viewModel.items.count)
+        let items = viewModel.items.isEmpty ? [] : Array(viewModel.items[start..<end].enumerated())
+        HStack(spacing: Tokens.cardGap(compact: false)) {
+            ForEach(items, id: \.element.uuid) { offset, item in
+                if start + offset == viewModel.favoritesCount,
+                   viewModel.favoritesCount > 0, viewModel.favoritesCount < viewModel.items.count {
+                    // 收藏分隔线的占位, 和卡片行一样宽, 不画出来。
+                    FavoritesDivider().hidden().frame(height: 0)
+                }
+                Group {
+                    if offset < 9 {
+                        RailKeycap(number: offset + 1, isSelected: viewModel.isSelected(item))
+                    } else {
+                        Color.clear.frame(height: 1)
+                    }
+                }
+                .frame(width: Tokens.cardWidth(compact: false))
+            }
+        }
+        .padding(.horizontal, Tokens.shelfPadding)
+        .frame(maxWidth: .infinity)
+        // 和 KeyboardLegend 同样的上下内边距, 键帽与原图例键位在同一高度。
+        .padding(.top, 4)
+        .padding(.bottom, 11)
+    }
+}
+
+private struct RailKeycap: View {
+    let number: Int
+    let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(verbatim: "⌘").fontWeight(.medium)
+                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
+            Text(verbatim: "\(number)").monospacedDigit()
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+        }
+        .font(.system(size: 13, weight: .bold, design: .rounded))
+        .padding(.horizontal, 10)
+        .frame(height: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.primary.opacity(isSelected ? 0 : 0.1), lineWidth: 0.5)
+        )
+        .shadow(color: isSelected ? Color.accentColor.opacity(0.4) : .black.opacity(0.08), radius: isSelected ? 4 : 2, y: 1)
+        .opacity(shown || reduceMotion ? 1 : 0)
+        .offset(y: shown || reduceMotion ? 0 : 4)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeOut(duration: 0.2).delay(Double(number - 1) * 0.015)) { shown = true }
+        }
+        .accessibilityHidden(true)
     }
 }

@@ -22,8 +22,11 @@ struct ItemCardView: View {
     var searchQuery: String = ""
     /// Briefly true after a "Show in History" jump lands on this card — draws an accent ring.
     var isFlashing: Bool = false
-    /// ⌘ 编号舞台下这张卡的角色 (亮出编号 / 压暗); 舞台没亮时为 nil。
+    /// ⌘ 编号舞台下这张卡的角色 (亮出编号 / 够不到); 舞台没亮时为 nil。
     var numberStage: CardNumberStage? = nil
+    /// 编号的显示样式 (设置 → 卡片 → ⌘ 编号)。底部键帽样式的键帽画在面板底部,
+    /// 卡片这边只负责淡出够不到的卡。
+    var numberStyle: NumberHintStyle = .bandKeycap
     /// Whether the "Show in History" context item applies (a search/filter is active, or the
     /// card is on a pinboard tab) — hidden in the plain History browse where it's a no-op.
     var canShowInHistory: Bool = false
@@ -113,11 +116,10 @@ struct ItemCardView: View {
             .padding(compact ? 8 : 10)
         }
         .frame(width: Tokens.cardWidth(compact: compact), height: Tokens.cardHeight(compact: compact), alignment: .topLeading)
-        // ⌘ 编号舞台下卡片内容变成「磨砂」: 降饱和 + 轻微模糊。正文变成底纹, 不再切碎
-        // 编号; app 色带的颜色变淡, 不会和浅蓝罩色混成橄榄绿、灰粉。数值为 1 / 0 时
-        // 等于没加, 视图结构不变, 才能跟着舞台一起渐变。
-        .saturation(numberStage == nil ? 1 : 0.35)
-        .blur(radius: numberStage == nil ? 0 : (numberStage == .dimmed ? 3.5 : 2.5))
+        // ⌘ 编号舞台下的淡出: 大号数字样式整张卡 (含色带) 淡到 0.28, 让数字压在上面;
+        // 其余样式只淡出 ⌘ 数字够不到的卡。只用 opacity, 不加模糊/降饱和, 免得每张卡
+        // 多一次离屏渲染。
+        .opacity(contentOpacity)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: numberStage)
         // M7: deliberately NOT routed through `glassSurface` even on macOS 26. Cards
         // are dense, content-bearing surfaces (up to 11 lines of mono-spaced clipboard
@@ -150,12 +152,11 @@ struct ItemCardView: View {
                 CornerFold(color: Tokens.color(fromHex: pinboardTint), compact: compact)
             }
         }
-        // ⌘ 编号舞台: 按住 ⌘ 时整张卡压暗, 中间亮出 ⌘1–9 对应的编号。在 clipShape 之前,
-        // 暗幕随卡片圆角裁切; 选中描边画在它上面, 选中的卡仍然看得出来。
-        .overlay {
-            if let numberStage {
-                CardNumberStageOverlay(stage: numberStage, isSelected: isSelected,
-                                       compact: compact, reduceMotion: reduceMotion)
+        // 大号数字样式: 右下角的细体数字, 画在淡出的卡片上面 (不受 contentOpacity 影响)。
+        .overlay(alignment: .bottomTrailing) {
+            if numberStyle == .editorial, case .numbered(let number) = numberStage {
+                EditorialNumber(number: number, isSelected: isSelected,
+                                compact: compact, reduceMotion: reduceMotion)
                     .transition(.opacity)
             }
         }
@@ -292,6 +293,15 @@ struct ItemCardView: View {
         .frame(width: 16, height: 16)
     }
 
+    /// ⌘ 编号舞台下卡片内容的不透明度。
+    private var contentOpacity: Double {
+        switch numberStage {
+        case nil: return 1
+        case .dimmed: return numberStyle == .editorial ? 0.2 : 0.45
+        case .numbered: return numberStyle == .editorial ? 0.28 : 1
+        }
+    }
+
     /// 卡头色带的颜色: 来源 app 图标的主色; 图片卡、取不到图标的条目用中性灰。
     /// 深色外观下压暗一些, 免得色带在暗面板上发亮。
     private var bandTint: NSColor? {
@@ -365,7 +375,11 @@ struct ItemCardView: View {
                 Spacer(minLength: 4)
                 // 悬停时收藏 / 移出收藏板 / 删除按钮替换时间, 放在色带里, 高度不超出色带;
                 // 平时已收藏的卡片在时间前显示一颗小星。
-                if isHovering {
+                if numberStyle == .bandKeycap, case .numbered(let number) = numberStage {
+                    BandKeycap(number: number, isSelected: isSelected, foreground: bandForeground,
+                               reduceMotion: reduceMotion)
+                        .transition(.opacity)
+                } else if isHovering {
                     CardHoverActions(favoritesEnabled: favoritesEnabled, isFavorite: item.isFavorite,
                                      onToggleFavorite: onToggleFavorite,
                                      // Only offer unpin while viewing a pinboard, where the card
@@ -915,74 +929,66 @@ enum CardNumberStage: Equatable {
     case dimmed
 }
 
-/// 编号舞台的卡片遮罩: 近白的浅蓝渐变罩色, 中间是深蓝圆底座上的白色数字。
-/// 文字依次轻微放大出现 (每张晚 15ms)。
-private struct CardNumberStageOverlay: View {
-    let stage: CardNumberStage
+/// 色带键帽样式: 色带右侧时间位置的「⌘1」小键帽。颜色跟随色带文字色 (白字色带上是
+/// 白键帽, 深字色带上是深色键帽); 选中的卡用强调色实底白字。依次出现, 每枚晚 18ms。
+private struct BandKeycap: View {
+    let number: Int
+    let isSelected: Bool
+    let foreground: Color
+    let reduceMotion: Bool
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 1) {
+            Text(verbatim: "⌘").fontWeight(.medium).opacity(isSelected ? 0.85 : 0.75)
+            Text(verbatim: "\(number)").monospacedDigit()
+        }
+        .font(.system(size: 11, weight: .bold, design: .rounded))
+        .foregroundStyle(isSelected ? Color.white : foreground)
+        .padding(.horizontal, 6)
+        .frame(height: 18)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(isSelected ? Color.accentColor : foreground.opacity(0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(isSelected ? Color.clear : foreground.opacity(0.3), lineWidth: 0.5)
+        )
+        .shadow(color: isSelected ? Color.accentColor.opacity(0.45) : .clear, radius: 2, y: 1)
+        .opacity(shown || reduceMotion ? 1 : 0)
+        .offset(y: shown || reduceMotion ? 0 : -3)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeOut(duration: 0.2).delay(Double(number - 1) * 0.018)) { shown = true }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// 大号数字样式: 卡片右下角的细体强调蓝数字, 选中的卡加粗一级。依次上浮出现, 每个晚 20ms。
+private struct EditorialNumber: View {
+    let number: Int
     let isSelected: Bool
     let compact: Bool
     let reduceMotion: Bool
     @State private var shown = false
 
     var body: some View {
-        ZStack {
-            scrim
-            if case .numbered(let number) = stage {
-                keycap(number)
-                    .scaleEffect(shown || reduceMotion ? 1 : 0.85)
-                    .opacity(shown || reduceMotion ? 1 : 0)
+        Text(verbatim: "\(number)")
+            .font(.system(size: compact ? 64 : 92, weight: isSelected ? .regular : .ultraLight))
+            .kerning(-3)
+            .monospacedDigit()
+            .foregroundStyle(Color.accentColor)
+            .padding(.trailing, compact ? 8 : 12)
+            .padding(.bottom, compact ? 6 : 10)
+            .opacity(shown || reduceMotion ? 0.92 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 8)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.timingCurve(0.2, 0.9, 0.3, 1, duration: 0.3).delay(Double(number - 1) * 0.02)) { shown = true }
             }
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            guard !reduceMotion else { return }
-            let delay: Double
-            if case .numbered(let number) = stage { delay = Double(number - 1) * 0.015 } else { delay = 0 }
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.8).delay(delay)) { shown = true }
-        }
-        .accessibilityHidden(true)
-    }
-
-    /// 待选卡片的罩色: 左上 #CFEAFF → 右下 #D6D8FF。由天蓝 #A8D8FF / 长春花蓝 #B4B8FF
-    /// 各掺 45% 白得来, 色相不变 (205° → 238°), 只是更亮、更接近白。
-    private static let candidateGradient = LinearGradient(
-        colors: [Color(red: 207 / 255, green: 234 / 255, blue: 1), Color(red: 214 / 255, green: 216 / 255, blue: 1)],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
-    /// 数字底座的深蓝渐变, 和罩色右下的长春花蓝同一色相方向。
-    private static let digitTop = Color(red: 30 / 255, green: 64 / 255, blue: 175 / 255)
-    private static let digitBottom = Color(red: 59 / 255, green: 79 / 255, blue: 207 / 255)
-    /// 底座投影色。
-    private static let digitShadow = Color(red: 30 / 255, green: 58 / 255, blue: 138 / 255)
-    /// ⌘ 数字够不到的卡: 冷灰 #9AA3B5, 不压暗, 只让它们看起来不在候选里。
-    private static let inactiveWash = Color(red: 154 / 255, green: 163 / 255, blue: 181 / 255)
-
-    /// 编号卡叠 0.6 的浅蓝渐变; 第 10 张起叠 0.35 的冷灰。
-    @ViewBuilder private var scrim: some View {
-        if stage == .dimmed {
-            Self.inactiveWash.opacity(0.35)
-        } else {
-            Self.candidateGradient.opacity(0.6)
-        }
-    }
-
-    /// 圆形实心底座 (深蓝渐变 #1E40AF → #3B4FCF, 上沿一道细高光, 下方一层深蓝投影)
-    /// 上放白色数字, 数字不加发光, 边缘保持清晰。底座自带深色, 浅色、深色外观用同一种样式。
-    private func keycap(_ number: Int) -> some View {
-        // 30pt: 和卡头 30pt 色带等高; 56pt 时占卡宽三成, 比卡片里其他元素大一截。
-        let side: CGFloat = compact ? 24 : 30
-        return ZStack {
-            Circle()
-                .fill(LinearGradient(colors: [Self.digitTop, Self.digitBottom], startPoint: .top, endPoint: .bottom))
-            Circle()
-                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0)],
-                                             startPoint: .top, endPoint: .center),
-                              lineWidth: 1)
-            Text(verbatim: "\(number)")
-                .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-        }
-        .frame(width: side, height: side)
-        .shadow(color: Self.digitShadow.opacity(0.35), radius: 4, y: 1.5)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

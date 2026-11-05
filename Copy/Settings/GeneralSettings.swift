@@ -122,6 +122,15 @@ struct CardsSettings: View {
                 .fixedSize()
             }
 
+            SettingsRow(label: String(localized: "⌘ Numbers:"),
+                        help: String(localized: "How card numbers appear while you hold ⌘. Press ⌘ and a number to paste that card.")) {
+                Picker("", selection: $settings.numberHintStyle) {
+                    ForEach(NumberHintStyle.allCases) { style in Text(style.title).tag(style) }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+            }
+
             SettingsRow(label: String(localized: "Favorites:"),
                         help: String(localized: "Favorites stay at the front and are never cleaned up automatically. Turning this off keeps the ones you saved.")) {
                 Toggle(String(localized: "Enable Favorites"), isOn: $settings.favoritesEnabled)

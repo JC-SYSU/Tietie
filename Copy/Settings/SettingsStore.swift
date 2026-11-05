@@ -43,6 +43,25 @@ enum CopySound: String, CaseIterable, Identifiable {
     }
 }
 
+/// 按住 ⌘ 时卡片编号的显示样式 (设置 → 卡片)。
+enum NumberHintStyle: String, CaseIterable, Identifiable {
+    /// 色带右侧的时间换成「⌘1」小键帽, 卡片内容不遮。
+    case bandKeycap
+    /// 卡片不动, 底部快捷键图例换成一排键帽, 每枚正对一张卡。
+    case keyRail
+    /// 整张卡变淡, 右下角浮出大号细体数字。
+    case editorial
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .bandKeycap: return String(localized: "Keycap in Header")
+        case .keyRail: return String(localized: "Keycaps Below Cards")
+        case .editorial: return String(localized: "Large Numbers")
+        }
+    }
+}
+
 /// Persisted appearance choice shared by the shelf, Paste Stack and Settings.
 enum ShelfTheme: String, CaseIterable, Identifiable {
     case system, light, dark
@@ -142,6 +161,7 @@ final class SettingsStore {
     static let appLanguageKey = "appLanguage"
     static let candidateLimitKey = "candidateLimit"
     static let trailingNewlineScopeKey = "trailingNewlineScope"
+    static let numberHintStyleKey = "numberHintStyle"
 
     var retention: RetentionPeriod {
         didSet {
@@ -314,6 +334,14 @@ final class SettingsStore {
     }
     @ObservationIgnored var onTrailingNewlineScopeChange: ((TrailingNewlineScope) -> Void)?
 
+    /// 按住 ⌘ 时的编号样式。面板视图直接读 (SettingsStore 是 @Observable), 不需要回调。
+    var numberHintStyle: NumberHintStyle {
+        didSet {
+            guard numberHintStyle != oldValue else { return }
+            defaults.set(numberHintStyle.rawValue, forKey: Self.numberHintStyleKey)
+        }
+    }
+
     @ObservationIgnored var onRulesChange: ((Set<String>) -> Void)?
     /// Fired by the About pane's "View Onboarding Again" button. Wired to
     /// `AppCoordinator.showOnboarding()`, which re-presents the welcome flow from step 0.
@@ -340,6 +368,8 @@ final class SettingsStore {
         } else {
             retention = .unlimited
         }
+        numberHintStyle = defaults.string(forKey: Self.numberHintStyleKey)
+            .flatMap(NumberHintStyle.init(rawValue:)) ?? .bandKeycap
         fetchLinkPreviews = false
         recognizeImageText = false
         hideDuringScreenSharing = (defaults.object(forKey: Self.hideDuringScreenSharingKey) as? Bool) ?? false
