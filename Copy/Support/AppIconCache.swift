@@ -21,8 +21,8 @@ enum AppIconCache {
 
 /// 卡头色带用的 app 主色: 从图标里取出现最多的彩色色相, 按 bundle id 缓存。
 /// 只取不透明、有一定饱和度和亮度的像素按色相分 12 桶, 用像素数×饱和度加权选最重的桶,
-/// 取桶内平均色; 彩色像素太少 (灰、黑、白为主的图标) 时用全部不透明像素平均。
-/// 结果再压一下饱和度和亮度, 免得色带比卡片内容还抢眼。
+/// 取桶内最鲜艳的一部分像素的平均色; 彩色像素太少 (灰、黑、白为主的图标) 时用全部
+/// 不透明像素平均。
 @MainActor
 enum AppTintCache {
     private static var cache: [String: NSColor] = [:]
@@ -53,7 +53,8 @@ enum AppTintCache {
         NSGraphicsContext.restoreGraphicsState()
         guard let data = rep.bitmapData else { return nil }
 
-        var buckets = [(w: Double, r: Double, g: Double, b: Double, n: Double)](repeating: (0, 0, 0, 0, 0), count: 12)
+        struct Pixel { let r, g, b, s, v: Double }
+        var buckets = [[Pixel]](repeating: [], count: 12)
         var all = (r: 0.0, g: 0.0, b: 0.0, n: 0.0)
         for i in 0..<(side * side) {
             let a = Double(data[i * 4 + 3]) / 255
@@ -64,23 +65,24 @@ enum AppTintCache {
             let b = Double(data[i * 4 + 2]) / 255 / a
             all.r += r; all.g += g; all.b += b; all.n += 1
             let c = NSColor(deviceRed: r, green: g, blue: b, alpha: 1)
-            let s = c.saturationComponent, v = c.brightnessComponent
+            let s = Double(c.saturationComponent), v = Double(c.brightnessComponent)
             guard s > 0.25, v > 0.2 else { continue }
-            let k = min(11, Int(c.hueComponent * 12))
-            buckets[k].w += Double(s)
-            buckets[k].r += r; buckets[k].g += g; buckets[k].b += b; buckets[k].n += 1
+            buckets[min(11, Int(c.hueComponent * 12))].append(Pixel(r: r, g: g, b: b, s: s, v: v))
         }
         guard all.n > 0 else { return nil }
-        let base: NSColor
-        if let best = buckets.max(by: { $0.w < $1.w }), best.n >= all.n * 0.08 {
-            base = NSColor(deviceRed: best.r / best.n, green: best.g / best.n, blue: best.b / best.n, alpha: 1)
-        } else {
-            base = NSColor(deviceRed: all.r / all.n, green: all.g / all.n, blue: all.b / all.n, alpha: 1)
+        // 选饱和度总和最大的色相桶; 桶内只取 饱和度×亮度 最高的三成像素求平均。
+        // 全桶平均会把描边、阴影、抗锯齿像素一起算进去, 颜色发灰发土。
+        if let best = buckets.max(by: { $0.reduce(0) { $0 + $1.s } < $1.reduce(0) { $0 + $1.s } }),
+           Double(best.count) >= all.n * 0.08 {
+            let top = best.sorted { $0.s * $0.v > $1.s * $1.v }.prefix(max(1, best.count * 3 / 10))
+            let n = Double(top.count)
+            return NSColor(deviceRed: top.reduce(0) { $0 + $1.r } / n,
+                           green: top.reduce(0) { $0 + $1.g } / n,
+                           blue: top.reduce(0) { $0 + $1.b } / n, alpha: 1)
         }
-        return NSColor(deviceHue: base.hueComponent,
-                       saturation: min(base.saturationComponent, 0.75),
-                       brightness: min(max(base.brightnessComponent, 0.25), 0.88),
-                       alpha: 1)
+        let base = NSColor(deviceRed: all.r / all.n, green: all.g / all.n, blue: all.b / all.n, alpha: 1)
+        return NSColor(deviceHue: base.hueComponent, saturation: base.saturationComponent,
+                       brightness: max(base.brightnessComponent, 0.3), alpha: 1)
     }
 
     /// 色带上的文字用白还是深色: 按 WCAG 相对亮度比较两者对比度, 取高的那个。

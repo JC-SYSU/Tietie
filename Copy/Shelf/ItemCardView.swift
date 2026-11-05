@@ -104,7 +104,7 @@ struct ItemCardView: View {
                 .padding(.horizontal, compact ? 8 : 10)
                 .frame(height: Tokens.cardBandHeight(compact: compact))
                 .frame(maxWidth: .infinity)
-                .background(bandFill)
+                .background(bandBackground)
             VStack(alignment: .leading, spacing: compact ? 4 : 6) {
                 body(for: item.kind)
                 Spacer(minLength: 0)
@@ -136,12 +136,12 @@ struct ItemCardView: View {
                 }
             }
         )
-        // 收藏板归属: 右下角斜向锦带, 用收藏板主题色。顶部已经是 app 色带, 归属标识放
-        // 到对角, 两种颜色不会挨在一起被看混。必须在 clipShape 之前, 锦带两端才会被
-        // 卡片圆角裁掉。
+        // 收藏板归属: 右下角三角书角, 用收藏板主题色。顶部已经是 app 色带, 归属标识放
+        // 到对角, 两种颜色不会挨在一起被看混。必须在 clipShape 之前, 三角的直角才会被
+        // 卡片圆角裁圆。
         .overlay(alignment: .bottomTrailing) {
             if let pinboardTint, !pinboardTint.isEmpty {
-                CornerRibbon(color: Tokens.color(fromHex: pinboardTint), compact: compact)
+                CornerFold(color: Tokens.color(fromHex: pinboardTint), compact: compact)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
@@ -170,29 +170,6 @@ struct ItemCardView: View {
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.45), lineWidth: 1))
                     .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                     .padding(6)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            // On hover, surface the two most-buried card actions (favorite, delete) as a
-            // floating pill so they're discoverable without opening the context menu.
-            // Otherwise, just the quiet favorite indicator when the card is favorited.
-            if isHovering && !isInlineRenaming {
-                CardHoverActions(favoritesEnabled: favoritesEnabled, isFavorite: item.isFavorite,
-                                 onToggleFavorite: onToggleFavorite,
-                                 // Only offer unpin while viewing a pinboard, where the card
-                                 // actually belongs to one it can be removed from.
-                                 onUnpin: currentPinboardID != nil ? onRemoveFromPinboard : nil,
-                                 onDelete: onDelete)
-                    .padding(5)
-                    .transition(.opacity)
-            } else if favoritesEnabled && item.isFavorite {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.yellow)
-                    // 星标落在 app 色带上, 黄色色带时靠这圈阴影分开。
-                    .shadow(color: .black.opacity(0.35), radius: 1)
-                    .padding(6)
-                    .accessibilityLabel("Favorite")
             }
         }
         .onHover { hovering in
@@ -328,6 +305,23 @@ struct ItemCardView: View {
         return Color(nsColor: tint)
     }
 
+    /// 色带底: 上浅下深的竖向渐变 + 顶部 1pt 高光 + 底部 0.5pt 暗线, 让色带有一点
+    /// 受光的厚度, 和下方白色正文区分开。
+    @ViewBuilder private var bandBackground: some View {
+        if bandTint == nil {
+            bandFill
+        } else {
+            LinearGradient(colors: [bandFill.blended(0.12, with: .white), bandFill.blended(0.06, with: .black)],
+                           startPoint: .top, endPoint: .bottom)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.white.opacity(0.35)).frame(height: 1)
+                }
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color.black.opacity(0.12)).frame(height: 0.5)
+                }
+        }
+    }
+
     private var bandForeground: Color {
         guard let tint = bandTint else { return .secondary }
         let shown = colorScheme == .dark ? (tint.blended(withFraction: 0.3, of: .black) ?? tint) : tint
@@ -368,11 +362,32 @@ struct ItemCardView: View {
                     .lineLimit(1)
                     .onTapGesture { onBeginInlineRename() }
                 Spacer(minLength: 4)
-                Text(Tokens.relativeFormatter.localizedString(for: item.lastUsedAt, relativeTo: Date()))
-                    .font(Tokens.caption)
-                    .foregroundStyle(bandForeground.opacity(0.75))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                // 悬停时收藏 / 移出收藏板 / 删除按钮替换时间, 放在色带里, 高度不超出色带;
+                // 平时已收藏的卡片在时间前显示一颗小星。
+                if isHovering {
+                    CardHoverActions(favoritesEnabled: favoritesEnabled, isFavorite: item.isFavorite,
+                                     onToggleFavorite: onToggleFavorite,
+                                     // Only offer unpin while viewing a pinboard, where the card
+                                     // actually belongs to one it can be removed from.
+                                     onUnpin: currentPinboardID != nil ? onRemoveFromPinboard : nil,
+                                     onDelete: onDelete,
+                                     tint: bandForeground,
+                                     size: Tokens.cardBandHeight(compact: compact) - 8)
+                        .transition(.opacity)
+                } else {
+                    if favoritesEnabled && item.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                            .shadow(color: .black.opacity(0.35), radius: 1)
+                            .accessibilityLabel("Favorite")
+                    }
+                    Text(Tokens.relativeFormatter.localizedString(for: item.lastUsedAt, relativeTo: Date()))
+                        .font(Tokens.caption)
+                        .foregroundStyle(bandForeground.opacity(0.75))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
         }
     }
@@ -511,18 +526,23 @@ struct ItemCardView: View {
             textBody
         case .link:
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    LinkFaviconView(item: item, store: store)
-                    Text(item.linkTitle ?? URL(string: item.plainText ?? "")?.host ?? String(localized: "Link"))
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(bodyLineLimit(standard: 2, compact: 1))
-                        .multilineTextAlignment(.leading)
+                // 只有抓到了网页标题才显示标题行。没有标题时这一行只能显示域名, 和底部
+                // 的域名重复, 就省掉, 把位置让给 URL。
+                if let title = item.linkTitle, !title.isEmpty {
+                    HStack(spacing: 5) {
+                        LinkFaviconView(item: item, store: store)
+                        Text(title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(bodyLineLimit(standard: 2, compact: 1))
+                            .multilineTextAlignment(.leading)
+                    }
                 }
                 // Give the URL the remaining body lines while keeping the footer visible.
                 Text(String((item.plainText ?? "").prefix(1_500)))
                     .font(Tokens.bodyMono)
                     .foregroundStyle(.secondary)
-                    .lineLimit(bodyLineLimit(standard: 5, compact: 3))
+                    .lineLimit(bodyLineLimit(standard: item.linkTitle?.isEmpty == false ? 5 : 8,
+                                             compact: item.linkTitle?.isEmpty == false ? 3 : 5))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
             }
@@ -725,32 +745,32 @@ private struct CardHoverActions: View {
     /// outside a pinboard, where there's nothing to unpin from.
     let onUnpin: (() -> Void)?
     let onDelete: () -> Void
+    /// 色带上的前景色 (白或深色), 按钮图标跟它走。
+    var tint: Color = .secondary
+    /// 按钮边长, 由色带高度减去上下留白得出。
+    var size: CGFloat = 22
 
     var body: some View {
-        HStack(spacing: 1) {
+        // 不加底板: 按钮直接画在色带上, 悬停的那个按钮才出现一块浅底。
+        HStack(spacing: 0) {
             if favoritesEnabled {
                 IconButton(systemName: isFavorite ? "star.fill" : "star",
-                           fontSize: 11, size: CGSize(width: 22, height: 22),
-                           tint: isFavorite ? .yellow : .secondary,
+                           fontSize: 11, size: CGSize(width: size, height: size),
+                           tint: isFavorite ? .yellow : tint,
                            help: isFavorite ? "Remove from favorites" : "Favorite",
                            action: onToggleFavorite)
             }
             if let onUnpin {
                 IconButton(systemName: "pin.slash",
-                           fontSize: 11, size: CGSize(width: 22, height: 22),
+                           fontSize: 11, size: CGSize(width: size, height: size),
+                           tint: tint,
                            help: "Remove from pinboard", action: onUnpin)
             }
             IconButton(systemName: "trash",
-                       fontSize: 11, size: CGSize(width: 22, height: 22),
+                       fontSize: 11, size: CGSize(width: size, height: size),
+                       tint: tint,
                        help: "Delete", action: onDelete)
         }
-        .padding(2)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(Capsule(style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5))
-        )
     }
 }
 
@@ -831,25 +851,56 @@ func containsBoxDrawing(_ text: String) -> Bool {
     return false
 }
 
-/// 收藏板归属锦带: 一条斜跨卡片右下角的主题色带, 两端由卡片圆角裁掉。
-private struct CornerRibbon: View {
+/// 收藏板归属书角: 卡片右下角的直角三角形, 用收藏板主题色。斜边一侧浅、直角一侧深,
+/// 斜边上有一道细高光, 朝左上投一点阴影, 看起来是一块压在卡片角上的书角。
+/// 直角由卡片 clipShape 裁圆。
+private struct CornerFold: View {
     let color: Color
     var compact: Bool = false
 
     var body: some View {
-        // 锦带中线到卡片角的距离 (沿对角线), 和锦带宽度。
-        let inset: CGFloat = compact ? 14 : 18
-        let thickness: CGFloat = compact ? 7 : 9
-        Rectangle()
-            .fill(color)
-            .frame(width: 120, height: thickness)
-            .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
-            .rotationEffect(.degrees(-45))
-            // 以卡片右下角为原点, 中心沿对角线往里收 inset。
-            .position(x: 0, y: 0)
-            .frame(width: 0, height: 0)
-            .offset(x: -inset / 2.squareRoot(), y: -inset / 2.squareRoot())
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        let side: CGFloat = compact ? 16 : 22
+        ZStack {
+            CornerTriangle()
+                .fill(LinearGradient(colors: [color.blended(0.18, with: .white), color.blended(0.12, with: .black)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .shadow(color: .black.opacity(0.22), radius: 1.5, x: -0.5, y: -0.5)
+            CornerHypotenuse()
+                .stroke(Color.white.opacity(0.55), lineWidth: 0.75)
+        }
+        .frame(width: side, height: side)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// 直角在右下的三角形。
+private struct CornerTriangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// `CornerTriangle` 的斜边。
+private struct CornerHypotenuse: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        return p
+    }
+}
+
+extension Color {
+    /// 与 `other` 按 `fraction` 混合 (AppKit `blended`), macOS 14 可用; SwiftUI 的
+    /// `Color.mix(with:by:)` 要 macOS 15。
+    func blended(_ fraction: CGFloat, with other: NSColor) -> Color {
+        let base = NSColor(self)
+        return Color(nsColor: base.usingColorSpace(.sRGB)?.blended(withFraction: fraction, of: other) ?? base)
     }
 }
