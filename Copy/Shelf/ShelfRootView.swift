@@ -583,6 +583,13 @@ private struct ShelfItemsRow: View {
         return viewModel.pinboards.first { $0.id.map { ids.contains($0) } ?? false }?.tint
     }
 
+    /// ⌘ 编号舞台下这张卡的角色: 当前页前 9 张亮出编号, 其余压暗; 舞台没亮时为 nil。
+    private func numberStage(forIndex index: Int) -> CardNumberStage? {
+        guard viewModel.numberStageShown else { return nil }
+        let offset = index - viewModel.pageStartIndex
+        return (0..<9).contains(offset) ? .numbered(offset + 1) : .dimmed
+    }
+
     /// 翻页容器: 无滚动视图, 每页固定渲染 `capacity` 张卡, 翻页由状态机切片驱动。
     private func pageContent(capacity: Int) -> some View {
         HStack(spacing: Tokens.cardGap(compact: compact)) {
@@ -605,7 +612,7 @@ private struct ShelfItemsRow: View {
                     compact: compact,
                     searchQuery: viewModel.searchQuery.text,
                     isFlashing: viewModel.flashItemID == pair.item.uuid,
-                    pasteNumber: (viewModel.commandHeld && pair.index < 9) ? pair.index + 1 : nil,
+                    numberStage: numberStage(forIndex: pair.index),
                     canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
                     onClick: { modifiers in viewModel.handleCardClick(pair.item, modifiers: modifiers) },
                     onHoverChanged: { hovering in
@@ -659,6 +666,8 @@ private struct ShelfItemsRow: View {
                 }
             }
         }
+        // ⌘ 编号舞台的暗幕淡入淡出 (编号底座自己的弹出动画在 CardNumberStageOverlay)。
+        .animation(.easeOut(duration: 0.18), value: viewModel.numberStageShown)
         .padding(.horizontal, Tokens.shelfPadding(compact: compact))
         .padding(.vertical, compact ? 10 : 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)

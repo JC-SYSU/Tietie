@@ -88,6 +88,13 @@ final class AppCoordinator {
         controller.onKeyEvent = { [weak self, weak controller] event in
             guard let self, let controller else { return false }
             let viewModel = self.shelfViewModel
+            // 按住 ⌘ 时按了数字以外的键 (⌘F、⌘⌫、⌘C…): 这是组合键, 不是在看编号,
+            // 收起编号舞台。放在最前面, 后面任何分支提前 return 都不影响。
+            // 18–29 是主键盘数字键 1–9、0 与 -、= 的 keyCode。
+            if event.modifierFlags.contains(.command),
+               !(18...29).contains(Int(event.keyCode)) {
+                viewModel.dismissNumberStage()
+            }
             // While the edit/create/rename/adjust-color sheet — or an inline title
             // rename field — is up, let its own view handle every key (arrows, space,
             // escape, return) instead of the shelf's global shortcuts — this monitor is
@@ -161,10 +168,13 @@ final class AppCoordinator {
             let allowsDigitQuickPaste = event.modifierFlags.contains(.command)
                 && !event.modifierFlags.contains(.option)
                 && !event.modifierFlags.contains(.control)
-            let pasteVisible: (Int) -> Void = { index in
+            // 编号按当前页数: ⌘1 是这一页的第一张, 与卡片上亮出的编号一致。
+            let pasteVisible: (Int) -> Void = { offset in
+                let index = viewModel.pageStartIndex + offset
                 guard viewModel.items.indices.contains(index) else { return }
                 viewModel.requestPaste(viewModel.items[index], plain: false)
             }
+
             // Ignore caps lock and device-specific flags when matching shortcuts, but
             // keep Shift/Option/Control significant so e.g. the ⇧⌘V plain-text hotkey
             // never falls through to the plain ⌘V paste action below.

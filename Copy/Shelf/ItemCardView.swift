@@ -22,8 +22,8 @@ struct ItemCardView: View {
     var searchQuery: String = ""
     /// Briefly true after a "Show in History" jump lands on this card — draws an accent ring.
     var isFlashing: Bool = false
-    /// The card's ⌘-digit paste number (1-9), shown as a badge while ⌘ is held; `nil` hides it.
-    var pasteNumber: Int? = nil
+    /// ⌘ 编号舞台下这张卡的角色 (亮出编号 / 压暗); 舞台没亮时为 nil。
+    var numberStage: CardNumberStage? = nil
     /// Whether the "Show in History" context item applies (a search/filter is active, or the
     /// card is on a pinboard tab) — hidden in the plain History browse where it's a no-op.
     var canShowInHistory: Bool = false
@@ -144,6 +144,15 @@ struct ItemCardView: View {
                 CornerFold(color: Tokens.color(fromHex: pinboardTint), compact: compact)
             }
         }
+        // ⌘ 编号舞台: 按住 ⌘ 时整张卡压暗, 中间亮出 ⌘1–9 对应的编号。在 clipShape 之前,
+        // 暗幕随卡片圆角裁切; 选中描边画在它上面, 选中的卡仍然看得出来。
+        .overlay {
+            if let numberStage {
+                CardNumberStageOverlay(stage: numberStage, isSelected: isSelected,
+                                       compact: compact, reduceMotion: reduceMotion)
+                    .transition(.opacity)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
@@ -158,20 +167,6 @@ struct ItemCardView: View {
                 .opacity(isFlashing ? 1 : 0)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: isFlashing)
         )
-        // ⌘-digit paste hint: a numbered badge shown while ⌘ is held, so users discover that
-        // ⌘1-9 pastes the Nth card.
-        .overlay(alignment: .topLeading) {
-            if let pasteNumber {
-                Text("\(pasteNumber)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(Color.accentColor))
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.45), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
-                    .padding(6)
-            }
-        }
         .onHover { hovering in
             if reduceMotion {
                 isHovering = hovering
@@ -902,5 +897,77 @@ extension Color {
     func blended(_ fraction: CGFloat, with other: NSColor) -> Color {
         let base = NSColor(self)
         return Color(nsColor: base.usingColorSpace(.sRGB)?.blended(withFraction: fraction, of: other) ?? base)
+    }
+}
+
+
+/// ⌘ 编号舞台下一张卡片的角色。
+enum CardNumberStage: Equatable {
+    /// 当前页前 9 张: 压暗并亮出编号 (1–9)。
+    case numbered(Int)
+    /// 其余卡片: 压得更暗, 不显示编号, 表示 ⌘ 数字够不到它。
+    case dimmed
+}
+
+/// 编号舞台的卡片遮罩。暗幕中心略亮、四周更暗; 编号是一块深色圆形底座上的大号
+/// 圆体数字, 带一圈上亮下暗的细边和柔和的外发光。选中的卡编号底座用强调色,
+/// 提示 ↩ 和 ⌘ 数字都能粘贴它。编号按顺序依次弹出 (每张晚 25ms)。
+private struct CardNumberStageOverlay: View {
+    let stage: CardNumberStage
+    let isSelected: Bool
+    let compact: Bool
+    let reduceMotion: Bool
+    @State private var shown = false
+
+    var body: some View {
+        ZStack {
+            scrim
+            if case .numbered(let number) = stage {
+                plate(number)
+                    .scaleEffect(shown || reduceMotion ? 1 : 0.6)
+                    .opacity(shown || reduceMotion ? 1 : 0)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { return }
+            let delay: Double
+            if case .numbered(let number) = stage { delay = Double(number - 1) * 0.025 } else { delay = 0 }
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.62).delay(delay)) { shown = true }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var scrim: some View {
+        let dimmed = stage == .dimmed
+        return RadialGradient(
+            colors: [Color.black.opacity(dimmed ? 0.55 : 0.30), Color.black.opacity(dimmed ? 0.72 : 0.58)],
+            center: .center, startRadius: 0, endRadius: compact ? 110 : 150)
+    }
+
+    private func plate(_ number: Int) -> some View {
+        let side: CGFloat = compact ? 46 : 64
+        return ZStack {
+            // 实色底座: 磨砂材质会透出面板后面的壁纸, 每块底座颜色都不一样。
+            Circle()
+                .fill(isSelected
+                      ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor.blended(0.15, with: .white), Color.accentColor.blended(0.2, with: .black)],
+                                                     startPoint: .top, endPoint: .bottom))
+                      : AnyShapeStyle(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.10)],
+                                                     startPoint: .top, endPoint: .bottom)))
+            Circle()
+                .strokeBorder(
+                    LinearGradient(colors: [Color.white.opacity(0.75), Color.white.opacity(0.15)],
+                                   startPoint: .top, endPoint: .bottom),
+                    lineWidth: 1)
+            Text("\(number)")
+                .font(.system(size: compact ? 26 : 36, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .shadow(color: .white.opacity(0.55), radius: 6)
+        }
+        .frame(width: side, height: side)
+        .shadow(color: (isSelected ? Color.accentColor : .white).opacity(0.35), radius: 14)
+        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
     }
 }

@@ -114,7 +114,40 @@ final class ShelfViewModel {
     /// True while the ⌘ key is held with the shelf open; reveals the ⌘-digit paste
     /// number on each card. Driven by a flags-changed monitor in `ShelfPanelController`
     /// (wired in `AppCoordinator`).
-    var commandHeld = false
+    var commandHeld = false {
+        didSet {
+            guard commandHeld != oldValue else { return }
+            numberStageTask?.cancel()
+            if commandHeld {
+                // 按住 ⌘ 一小会儿才亮起编号舞台: ⌘F、⌘⌫、⌘ 点击这类组合键一般 0.2s 内
+                // 就松开, 不该每次都让整排卡片闪一下。
+                numberStageTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(220))
+                    guard let self, !Task.isCancelled, self.commandHeld else { return }
+                    self.numberStageShown = true
+                }
+            } else {
+                numberStageShown = false
+            }
+        }
+    }
+    /// ⌘ 编号舞台是否亮起 (卡片变暗、中间亮出 1–9 编号)。由 `commandHeld` 延时驱动;
+    /// 按住 ⌘ 期间按了别的键 (⌘F 等) 或点了卡片, 由 `dismissNumberStage()` 收起。
+    private(set) var numberStageShown = false
+    @ObservationIgnored private var numberStageTask: Task<Void, Never>?
+
+    /// 收起编号舞台, 并取消还没到点的亮起。⌘ 组合键或 ⌘ 点击发生时调用。
+    func dismissNumberStage() {
+        numberStageTask?.cancel()
+        numberStageShown = false
+    }
+
+    /// 当前页第一张卡片在 `items` 里的下标, 与 `ShelfItemsRow.pageItems` 的切片起点
+    /// 一致。⌘ 数字粘贴和卡片上的编号都从这里数, 第 2 页起编号也从 1 开始。
+    var pageStartIndex: Int {
+        guard !items.isEmpty else { return 0 }
+        return min(pageIndex * max(1, layoutCapacity), items.count - 1)
+    }
     /// True while ⌥ is held with the shelf open; reveals the keyboard legend and the
     /// ⌥-number hints on pinboard tabs. Driven by the same flags-changed monitor as
     /// `commandHeld`.
@@ -439,6 +472,7 @@ final class ShelfViewModel {
     /// a second click on the same card within the system double-click interval pastes —
     /// paste depends on the click cadence only, never on the prior selection state.
     func handleCardClick(_ item: ClipItem, modifiers: NSEvent.ModifierFlags) {
+        dismissNumberStage()
         // Selecting a card leaves the search field: focus returns to the shelf so the
         // card shortcuts (Space preview, ⏎ paste) work with the results still up. The
         // query itself is untouched — results stay visible, only focus moves.
