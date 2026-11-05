@@ -173,30 +173,22 @@ public struct ItemStore {
         return try search(filter: filter, limit: limit, favoritesFirst: false)
     }
 
-    /// Faceted search (see `SearchFilter`): substring-matches `filter.text` in Swift
-    /// (`TextMatch`) when present, then AND-applies the app/kind/date/favorites/pinboard
-    /// facets. With no text it's a plain `SELECT`, so facet-only queries work without a
-    /// matching pass. With text, SQL bounds each half to the `TextMatch.candidateWindow`
-    /// newest rows before the Swift-side match runs.
+    /// Faceted search (see `SearchFilter`): substring-matches `filter.text` against the
+    /// normalized `item_search.text` (see `SearchText`) when present, then AND-applies the
+    /// app/kind/date/favorites/pinboard facets. With no text it's a plain `SELECT`.
     /// Results page the same way history does, so favorites get the same exemption from
     /// `limit` for the same reason — see `fetchRecentPage`. Matching favorites come first
     /// and in full; everything else is bounded.
     /// Set `favoritesFirst` to false for one bounded recency window, without changing marks.
     public func search(filter: SearchFilter, limit: Int = 100, favoritesFirst: Bool = true) throws -> [ClipItem] {
-        let words = TextMatch.words(TextMatch.normalize(filter.text))
-        // The LIKE prefilter is already an exact match for a word whose case SQLite folds
-        // the same way the Swift match would — plain ASCII (LIKE folds its case) and
-        // caseless CJK. Only a word carrying a non-ASCII cased letter (é, ü, …) can slip
-        // past the prefilter, so only then does the slower Swift re-match run. The common
-        // query therefore does no Swift matching at all, on any row.
-        let matchWords: [String]? = words.contains(where: TextMatch.prefilterNeedsUppercase) ? words : nil
+        let words = SearchText.words(filter.text)
         // With text the fetch stops at `limit` matches while reading; without text,
         // SQL's own LIMIT already bounds it.
         let textLimit = words.isEmpty ? nil : limit
         if !favoritesFirst {
             let query = searchQuery(filter, words: words, isFavorite: nil, limit: limit)
             return try writer.read { db in
-                try collectMatches(db, query, matchWords: matchWords, limit: textLimit)
+                try collectMatches(db, query, limit: textLimit)
             }
         }
         let favorites = searchQuery(filter, words: words, isFavorite: true, limit: nil)
@@ -204,36 +196,33 @@ public struct ItemStore {
         return try writer.read { db in
             // Favorites come first and in full (exempt from `limit`, as the shelf places
             // them); only the non-favorite rest is bounded.
-            try collectMatches(db, favorites, matchWords: matchWords, limit: nil)
-                + collectMatches(db, rest, matchWords: matchWords, limit: textLimit)
+            try collectMatches(db, favorites, limit: nil)
+                + collectMatches(db, rest, limit: textLimit)
         }
     }
 
-    /// Streams a built query's rows, keeps the ones `matchWords` accepts (`nil` = the
-    /// prefilter is authoritative, keep all), and stops as soon as `limit` are collected
-    /// (`nil` = no bound). Reading stops early, so a broad query costs the rows it
-    /// actually needs, not every prefiltered row.
+    /// Streams a built query's rows and stops as soon as `limit` are collected (`nil` =
+    /// no bound). Reading stops early, so a broad query costs the rows it actually needs.
     private func collectMatches(_ db: Database,
                                 _ query: (sql: String, arguments: [any DatabaseValueConvertible]),
-                                matchWords: [String]?,
                                 limit: Int?) throws -> [ClipItem] {
         let cursor = try ClipItem.fetchCursor(db, sql: query.sql, arguments: StatementArguments(query.arguments))
         var results: [ClipItem] = []
         while let item = try cursor.next() {
-            if let matchWords, !TextMatch.matches(matchWords, in: item) { continue }
             results.append(item)
             if let limit, results.count >= limit { break }
         }
         return results
     }
 
-    /// Builds one half of `search(filter:)`: the candidate rows on one side of the
-    /// favorite split, newest first. Text matching happens in Swift (`TextMatch`), so
-    /// with free text the SQL side just bounds the recency window; without it, `limit`
-    /// applies directly.
+    /// Builds one half of `search(filter:)`: the matching rows on one side of the
+    /// favorite split, newest first. With free text the read loop bounds the result
+    /// (`collectMatches`); without it, SQL's `LIMIT` does.
     private func searchQuery(_ filter: SearchFilter, words: [String], isFavorite: Bool?, limit: Int?)
         -> (sql: String, arguments: [any DatabaseValueConvertible]) {
-        var sql = "SELECT item.* FROM item WHERE 1"
+        var sql = filter.hasText
+            ? "SELECT item.* FROM item JOIN item_search ON item_search.itemId = item.id WHERE 1"
+            : "SELECT item.* FROM item WHERE 1"
         var arguments: [any DatabaseValueConvertible] = []
         let facets = facetClauses(filter)
         sql += facets.sql
@@ -244,8 +233,7 @@ public struct ItemStore {
         // A literal 0/1 from a Bool, not caller text, so there's nothing to bind or escape.
         if let isFavorite { sql += " AND item.isFavorite = \(isFavorite ? 1 : 0)" }
         sql += " ORDER BY item.lastUsedAt DESC"
-        // With text, the Swift-side match is the bound (SQL can't express it); without
-        // it, SQL's LIMIT is.
+        // With text, `collectMatches` stops reading at `limit`; without it, SQL's LIMIT does.
         if !filter.hasText, let limit {
             sql += " LIMIT ?"
             arguments.append(limit)
@@ -253,27 +241,13 @@ public struct ItemStore {
         return (sql, arguments)
     }
 
-    /// AND-ed SQL LIKE prefilter for the query `words` (already normalized), OR-ed
-    /// across the searchable fields. SQLite's LIKE folds ASCII case on its own, so a
-    /// Latin word needs one pattern; only a word with a non-ASCII cased letter gets a
-    /// second, upper-case pattern (see `TextMatch.prefilterNeedsUppercase`). %, _ and \
-    /// are escaped to stay literal. This only shrinks the rows `TextMatch.matches`
-    /// re-checks: it can over-select, and its non-ASCII case handling is the rougher one.
+    /// One `item_search.text LIKE` per query word (already normalized by `SearchText.words`),
+    /// AND-ed. Both sides went through the same `SearchText.normalize`, so the LIKE is an
+    /// exact substring match; %, _ and \ are escaped to stay literal.
     private func appendTextPrefilter(_ words: [String], into sql: inout String, arguments: inout [any DatabaseValueConvertible]) {
-        let fields = ["plainText", "title", "linkTitle", "appName", "recognizedText"]
-        func clause(_ pattern: String) -> String {
-            "(" + fields.map { "\($0) LIKE ? ESCAPE '\\'" }.joined(separator: " OR ") + ")"
-        }
         for word in words {
-            let lower = TextMatch.likePattern(word)
-            sql += " AND (" + clause(lower)
-            arguments.append(contentsOf: repeatElement(lower, count: fields.count))
-            if TextMatch.prefilterNeedsUppercase(word) {
-                let upper = TextMatch.likePattern(word.uppercased())
-                sql += " OR " + clause(upper)
-                arguments.append(contentsOf: repeatElement(upper, count: fields.count))
-            }
-            sql += ")"
+            sql += " AND item_search.text LIKE ? ESCAPE '\\'"
+            arguments.append(SearchText.likePattern(word))
         }
     }
 

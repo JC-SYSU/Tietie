@@ -410,6 +410,16 @@ final class AppCoordinator {
         let blobs = BlobStore(directory: database.blobsDirectory)
         let store = ItemStore(writer: database.writer, blobs: blobs)
         self.store = store
+        // 归一化规则或 macOS 版本变了时重算搜索文本 (见 SearchText.stamp)。放在持久化队列
+        // 上, 与捕获写入串行、不卡启动; 平时戳一致, 只读一行就返回。
+        persistQueue.async {
+            do {
+                let changed = try database.refreshSearchTextIfNeeded()
+                if changed > 0 { NSLog("Copy: refreshed search text for \(changed) items") }
+            } catch {
+                NSLog("Copy: search text refresh failed: \(error)")
+            }
+        }
         let pinboardStore = PinboardStore(writer: database.writer)
         self.pinboardStore = pinboardStore
         self.pasteService = PasteService(pasteboard: NSPasteboard.general,

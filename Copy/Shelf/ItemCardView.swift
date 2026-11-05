@@ -393,6 +393,17 @@ struct ItemCardView: View {
     private var textBody: some View {
         if let hex = HexColor.normalized(item.plainText ?? "") {
             colorSwatchBody(hex)
+        } else if !searchQuery.isEmpty,
+                  let snippet = SearchSnippetCache.shared.snippet(for: item, query: searchQuery) {
+            // 搜索时显示命中处所在的那一段并高亮查询词 (见 SearchSnippet), 不再固定显示开头。
+            // 代码条目保留等宽字体, 但这时不做语法着色: 着色 token 是按开头 1500 字符算的,
+            // 套不到窗口上。
+            let isCode = CodeHighlightCache.shared.result(for: item.plainText ?? "", uuid: item.uuid, cap: 1_500).language != nil
+            searchSnippetText(snippet)
+                .font(isCode ? .system(size: 12, design: .monospaced) : Tokens.cardBody)
+                .lineLimit(bodyLineLimit(standard: 11, compact: 6))
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         } else {
             // Only cap here (not in the cache key), so cards with >300 chars render a
             // snippet: the full text is still in the item, searchable, and pasteable;

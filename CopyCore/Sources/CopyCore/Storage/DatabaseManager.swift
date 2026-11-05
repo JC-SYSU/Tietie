@@ -26,6 +26,8 @@ public final class DatabaseManager {
                 guard let filenames = String.fromDatabaseValue(values[0]) else { return false }
                 return ImageFileDetection.containsImageFile(in: filenames)
             })
+            // item_search 的触发器在每条连接上调用它 (见 migration v4)。
+            db.add(function: Self.searchTextFunction)
         }
         writer = try DatabasePool(
             path: directory.appendingPathComponent("copy.sqlite").path,
@@ -106,6 +108,69 @@ public final class DatabaseManager {
                 t.add(column: "emoji", .text)
             }
         }
+        // 归一化搜索文本 (见 SearchText), 放独立表 item_search 而不是 item 的一列:
+        // 触发器若 UPDATE item, 会连带触发 GRDB 的 FTS5 同步触发器 (__item_fts_au), 在
+        // INSERT 场景下先于 __item_fts_ai 执行时 FTS5 会报 "malformed"。写独立表则 item 上
+        // 的触发器互不影响。ItemStore/ArchiveIO 里任何写 item 的路径都不用记得维护它。
+        migrator.registerMigration("v4") { db in
+            // 迁移也可能跑在不经 DatabaseManager 配置的连接上 (测试直接拿 DatabaseQueue
+            // 迁移), 先确保函数已注册; 同名同参数个数重复注册会覆盖, 无副作用。
+            db.add(function: Self.searchTextFunction)
+            let args = SearchText.fields.map { "NEW.\($0)" }.joined(separator: ", ")
+            let changed = SearchText.fields.map { "OLD.\($0) IS NOT NEW.\($0)" }.joined(separator: " OR ")
+            let upsert = """
+                INSERT INTO item_search(itemId, text) VALUES (NEW.id, \(SearchText.sqlFunctionName)(\(args)))
+                ON CONFLICT(itemId) DO UPDATE SET text = excluded.text;
+                """
+            try db.execute(sql: """
+                CREATE TABLE item_search(
+                    itemId INTEGER PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
+                    text TEXT NOT NULL);
+                CREATE TRIGGER item_search_ai AFTER INSERT ON item BEGIN \(upsert) END;
+                CREATE TRIGGER item_search_au AFTER UPDATE OF \(SearchText.fields.joined(separator: ", ")) ON item
+                WHEN \(changed) BEGIN \(upsert) END;
+                CREATE TABLE search_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                """)
+            try Self.upsertAllSearchText(db)
+            try db.execute(sql: "INSERT INTO search_meta(key, value) VALUES ('stamp', ?)",
+                           arguments: [SearchText.stamp])
+        }
         return migrator
+    }
+
+    /// `SearchText.sqlFunctionName`: 五个字段 → 归一化后的搜索文本。
+    static let searchTextFunction = DatabaseFunction(
+        SearchText.sqlFunctionName,
+        argumentCount: SearchText.fields.count,
+        pure: true
+    ) { values in
+        SearchText.joined(values.map { String.fromDatabaseValue($0) })
+    }
+
+    /// 按当前规则重算全部行的搜索文本: 缺的补上, 变了的改写, 没变的不动。返回写入行数。
+    @discardableResult
+    static func upsertAllSearchText(_ db: Database) throws -> Int {
+        let call = "\(SearchText.sqlFunctionName)(\(SearchText.fields.joined(separator: ", ")))"
+        // `WHERE true` 是 SQLite 对 INSERT…SELECT…ON CONFLICT 的语法要求 (消除 ON 的歧义)。
+        try db.execute(sql: """
+            INSERT INTO item_search(itemId, text) SELECT id, \(call) FROM item WHERE true
+            ON CONFLICT(itemId) DO UPDATE SET text = excluded.text WHERE item_search.text IS NOT excluded.text
+            """)
+        return db.changesCount
+    }
+
+    /// 版本戳与当前不一致 (改了归一化规则, 或 macOS 升级可能改变 Unicode 数据) 时重算
+    /// 搜索文本, 只改写结果真的变了的行。在 app 的持久化队列上调用, 与捕获写入串行;
+    /// 一次事务, 中途退出就保持旧戳, 下次启动重来。返回改写的行数, 无需重算时为 0。
+    @discardableResult
+    public func refreshSearchTextIfNeeded() throws -> Int {
+        try writer.write { db in
+            let stored = try String.fetchOne(db, sql: "SELECT value FROM search_meta WHERE key = 'stamp'")
+            guard stored != SearchText.stamp else { return 0 }
+            let changed = try Self.upsertAllSearchText(db)
+            try db.execute(sql: "INSERT OR REPLACE INTO search_meta(key, value) VALUES ('stamp', ?)",
+                           arguments: [SearchText.stamp])
+            return changed
+        }
     }
 }

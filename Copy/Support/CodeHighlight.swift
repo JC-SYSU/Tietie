@@ -86,3 +86,47 @@ final class CodeHighlightCache {
         return (language, tokens)
     }
 }
+
+/// 搜索时卡片显示的命中窗口 (`SearchSnippet`), 按 条目 + 内容 + 查询 缓存: SwiftUI 会反复
+/// 求值卡片 body, 而长条目的定位要扫描上万字符。内容变了 (编辑) 由 contentHash 区分。
+@MainActor
+final class SearchSnippetCache {
+    static let shared = SearchSnippetCache()
+
+    private struct Key: Hashable {
+        let uuid: String
+        let contentHash: String
+        let query: String
+    }
+
+    private var entries: [Key: SearchSnippet?] = [:]
+    /// 与 `CodeHighlightCache` 相同的粗放上限: 满了整体清空。
+    private let capacity = 500
+
+    func snippet(for item: ClipItem, query: String) -> SearchSnippet? {
+        let key = Key(uuid: item.uuid, contentHash: item.contentHash, query: query)
+        if let cached = entries[key] { return cached }
+        let made = SearchSnippet.make(text: item.plainText ?? "", query: query)
+        if entries.count >= capacity { entries.removeAll() }
+        entries[key] = made
+        return made
+    }
+}
+
+/// 命中窗口渲染成 Text: 查询词用强调色加粗 (与 OCR 摘要同一套样式), 被截断的一端加 "…"。
+func searchSnippetText(_ snippet: SearchSnippet) -> Text {
+    let chars = Array(snippet.text)
+    var result = Text(verbatim: snippet.truncatedStart ? "…" : "")
+    var cursor = 0
+    for range in snippet.highlights where range.lowerBound >= cursor && range.upperBound <= chars.count {
+        if range.lowerBound > cursor {
+            result = result + Text(verbatim: String(chars[cursor..<range.lowerBound]))
+        }
+        result = result + Text(verbatim: String(chars[range])).foregroundColor(.accentColor).fontWeight(.semibold)
+        cursor = range.upperBound
+    }
+    if cursor < chars.count {
+        result = result + Text(verbatim: String(chars[cursor...]))
+    }
+    return snippet.truncatedEnd ? result + Text(verbatim: "…") : result
+}
