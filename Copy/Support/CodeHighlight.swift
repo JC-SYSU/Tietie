@@ -107,6 +107,8 @@ final class SearchSnippetCache {
         let key = Key(uuid: item.uuid, contentHash: item.contentHash, query: query)
         if let cached = entries[key] { return cached }
         let made = SearchSnippet.make(text: item.plainText ?? "", query: query)
+        // 折叠表还没建好时算出的是旧做法的结果, 不缓存, 表建好后重算。
+        guard SearchFoldTable.current != nil else { return made }
         if entries.count >= capacity { entries.removeAll() }
         entries[key] = made
         return made

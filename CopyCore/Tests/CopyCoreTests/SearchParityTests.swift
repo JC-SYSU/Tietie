@@ -38,6 +38,15 @@ final class SearchParityTests: XCTestCase {
             if stored[item.id!] != SearchText.joined(values) { staleRows.append(item.id!) }
         }
 
+        // 1b. 命中摘要的折叠表: 每条记录前 scanLimit 个字符折叠后 == SearchText.normalize (按字节)。
+        let table = SearchFoldTable.prepare()
+        var foldMismatches: [Int64] = [], foldBailed = 0
+        for item in items {
+            let scope = (item.plainText ?? "").prefix(SearchSnippet.scanLimit)
+            guard let folded = table.fold(scope) else { foldBailed += 1; continue }
+            if folded.bytes != Array(SearchText.normalize(String(scope)).utf8) { foldMismatches.append(item.id!) }
+        }
+
         // 2. 查询: 从真实文本里抽子串 + 固定探针, 种子固定, 每次运行同一批。
         var rng = SplitMix64(seed: 20_261_105)
         let texts = items.compactMap(\.plainText).filter { $0.count >= 8 }
@@ -56,6 +65,7 @@ final class SearchParityTests: XCTestCase {
         var mismatches: [[String: Any]] = []
         var latencies: [Double] = []
         let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id!, $0) })
+        var snippetCards = 0, snippetCompared = 0, snippetMismatches: [String] = [], snippetLatencies: [Double] = []
         for query in queries {
             let words = SearchText.words(query).map { Array($0.utf8) }
             let expected = Set(items.lazy.filter { item in
@@ -75,6 +85,21 @@ final class SearchParityTests: XCTestCase {
                 && favorites.count == expectedFavorites
                 && rest.count == min(25, expected.count - expectedFavorites)
                 && Set(top.compactMap(\.id)).isSubset(of: expected)
+            // 3b. 面板前 25 张卡的命中摘要 == 逐字符归一化对照 (不经折叠表)。
+            let snippetStart = DispatchTime.now().uptimeNanoseconds
+            let snippets = top.map { SearchSnippet.make(text: $0.plainText ?? "", query: query, length: 300, lead: 40, table: table) }
+            snippetLatencies.append(Double(DispatchTime.now().uptimeNanoseconds - snippetStart) / 1e6)
+            for (item, snippet) in zip(top, snippets) {
+                snippetCards += 1
+                let text = item.plainText ?? ""
+                // 退回旧做法的卡不在这里比 (旧做法已在改动前逐张核对过)。
+                guard table.fold(text.prefix(SearchSnippet.scanLimit + 300)) != nil else { continue }
+                snippetCompared += 1
+                if snippet != Self.oracleSnippet(text: text, query: query), snippetMismatches.count < 20 {
+                    snippetMismatches.append("\(query) #\(item.id!)")
+                }
+            }
+
             if full != expected || !orderOK {
                 mismatches.append(["query": query, "expected": expected.count, "engine": full.count,
                                    "missing": expected.subtracting(full).count, "extra": full.subtracting(expected).count,
@@ -83,9 +108,14 @@ final class SearchParityTests: XCTestCase {
         }
 
         latencies.sort()
+        snippetLatencies.sort()
         let report: [String: Any] = [
             "items": items.count, "queries": queries.count,
             "staleSearchRows": staleRows.count, "mismatchedQueries": mismatches.count,
+            "foldMismatchItems": foldMismatches.count, "foldBailedItems": foldBailed,
+            "snippetCards": snippetCards, "snippetCompared": snippetCompared, "snippetMismatches": snippetMismatches,
+            "snippetMsPer25Cards": ["median": snippetLatencies[snippetLatencies.count / 2],
+                                    "p90": snippetLatencies[snippetLatencies.count * 9 / 10], "max": snippetLatencies.last!],
             "mismatches": Array(mismatches.prefix(20)),
             "latencyMs": ["median": latencies[latencies.count / 2], "p90": latencies[latencies.count * 9 / 10],
                           "max": latencies.last!],
@@ -97,6 +127,53 @@ final class SearchParityTests: XCTestCase {
         }
         XCTAssertEqual(staleRows.count, 0, "item_search 与按当前规则重算的结果不一致: \(staleRows.prefix(10))")
         XCTAssertEqual(mismatches.count, 0, "搜索与暴力结果不一致: \(mismatches.prefix(5))")
+        XCTAssertEqual(foldMismatches, [], "折叠表结果与 SearchText.normalize 不一致的条目")
+        XCTAssertEqual(snippetMismatches, [], "命中摘要与逐字符对照不一致")
+    }
+
+    /// 对照: 逐字符 (Character) 按 SearchText.normalize 归一化后找第一次出现, 取窗规则与
+    /// SearchSnippet 相同。不经折叠表, 也没有 5000 字上限。
+    static func oracleSnippet(text: String, query: String) -> SearchSnippet? {
+        let words = SearchText.words(query).map { Array($0.unicodeScalars) }
+        guard !words.isEmpty, !text.isEmpty else { return nil }
+        let scope = text.prefix(SearchSnippet.scanLimit)
+        let (scalars, owners) = normalizedScalars(scope)
+        guard let anchor = words.compactMap({ find($0, in: scalars, from: 0).map { owners[$0] } }).min() else { return nil }
+        var start = scope.index(anchor, offsetBy: -40, limitedBy: scope.startIndex) ?? scope.startIndex
+        if let newline = scope[start..<anchor].lastIndex(where: \.isNewline) { start = scope.index(after: newline) }
+        let end = text.index(start, offsetBy: 300, limitedBy: text.endIndex) ?? text.endIndex
+        let window = text[start..<end]
+        let (ws, wo) = normalizedScalars(window)
+        var ranges: [Range<Int>] = []
+        for word in words {
+            var k = 0
+            while ranges.count < SearchSnippet.maxHighlights, let hit = find(word, in: ws, from: k) {
+                let lower = wo[hit], upper = window.index(after: wo[hit + word.count - 1])
+                ranges.append(window.distance(from: window.startIndex, to: lower)..<window.distance(from: window.startIndex, to: upper))
+                k = wo.firstIndex { $0 >= upper } ?? ws.count
+            }
+        }
+        var merged: [Range<Int>] = []
+        for r in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let l = merged.last, r.lowerBound <= l.upperBound { merged[merged.count - 1] = l.lowerBound..<max(l.upperBound, r.upperBound) } else { merged.append(r) }
+        }
+        return SearchSnippet(text: String(window), highlights: merged, truncatedStart: start > text.startIndex, truncatedEnd: end < text.endIndex)
+    }
+
+    private static func normalizedScalars(_ s: Substring) -> ([Unicode.Scalar], [String.Index]) {
+        var scalars: [Unicode.Scalar] = [], owners: [String.Index] = []
+        var i = s.startIndex
+        while i < s.endIndex {
+            for u in SearchText.normalize(String(s[i])).unicodeScalars { scalars.append(u); owners.append(i) }
+            i = s.index(after: i)
+        }
+        return (scalars, owners)
+    }
+
+    private static func find(_ needle: [Unicode.Scalar], in hay: [Unicode.Scalar], from: Int) -> Int? {
+        guard !needle.isEmpty, from + needle.count <= hay.count else { return nil }
+        for i in from...(hay.count - needle.count) where hay[i] == needle[0] && hay[i..<(i + needle.count)].elementsEqual(needle) { return i }
+        return nil
     }
 
     private func sourceURL(_ value: String) -> URL {
