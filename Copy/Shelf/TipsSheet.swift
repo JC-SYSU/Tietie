@@ -12,7 +12,7 @@ struct TipsSheet: View {
     }
 
     private var pasteStackHotkey: String {
-        KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description ?? "⇧⌘C"
+        KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description ?? "—"
     }
 
     var body: some View {

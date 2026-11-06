@@ -213,6 +213,13 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// handler doesn't order the panel out after a newer show/hide has superseded it.
     private var closeToken = 0
     private var hideDuringScreenSharing: Bool
+    /// 唤出面板时整个屏幕变暗 (设置 → 面板 → 背景变暗)。
+    var dimsScreen = true {
+        didSet { if !dimsScreen { dimmingPanel?.orderOut(nil) } }
+    }
+    /// 全屏暗幕窗口, 排在面板正下方, 和面板一起淡入淡出。参照觅见的做法: 无边框、
+    /// 不接收鼠标 (点击照常穿过去, 点面板外照常收起面板)。
+    private var dimmingPanel: NSPanel?
     private var floatingShelf: Bool
     private var compactShelf: Bool
     private var theme: ShelfTheme
@@ -272,6 +279,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// AppKit's normal default (content visible, not modifiable by other processes).
     func setHideDuringScreenSharing(_ hide: Bool) {
         hideDuringScreenSharing = hide
+        dimmingPanel?.sharingType = hide ? .none : .readOnly
         panel?.sharingType = hide ? .none : .readOnly
         panel?.childWindowSharingType = hide ? .none : .readOnly
     }
@@ -333,6 +341,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
 
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         setShelfContentOffset(0, in: panel)
+        let dim = dimsScreen ? prepareDimmingPanel(on: screen, below: panel) : nil
         if floatingShelf {
             // Keep the window on its display: only its clipped content slides, so it
             // cannot leak onto another monitor placed below this one.
@@ -340,23 +349,25 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             panel.alphaValue = 1
             setShelfContentOffset(reduceMotion ? 0 : -frame.height, in: panel)
             panel.makeKeyAndOrderFront(nil)
-            if !reduceMotion {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.13
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    shelfContentView(in: panel)?.animator().setFrameOrigin(.zero)
-                }
+            dim?.order(.below, relativeTo: panel.windowNumber)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = reduceMotion ? 0 : 0.13
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                if !reduceMotion { shelfContentView(in: panel)?.animator().setFrameOrigin(.zero) }
+                dim?.animator().alphaValue = 1
             }
         } else {
             panel.setFrame(reduceMotion ? frame : frame.offsetBy(dx: 0, dy: -24), display: false)
             panel.alphaValue = 0
             panel.makeKeyAndOrderFront(nil)
+            dim?.order(.below, relativeTo: panel.windowNumber)
             NSApp.activate(ignoringOtherApps: true)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = reduceMotion ? 0 : 0.22
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().alphaValue = 1
                 panel.animator().setFrame(frame, display: true)
+                dim?.animator().alphaValue = 1
             }
         }
         installKeyMonitor()
@@ -405,6 +416,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
             panel.animator().alphaValue = 0
             shelfContentView(in: panel)?.animator().setFrameOrigin(NSPoint(x: 0, y: -Self.closeDrop))
+            dimmingPanel?.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             // NSAnimationContext runs its completion on the main thread; the closure's
             // `@Sendable` type just can't see that statically.
@@ -421,6 +433,7 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// still fading out.
     private func finishHide(_ panel: KeyablePanel, restoreFocus: Bool) {
         panel.orderOut(nil)
+        dimmingPanel?.orderOut(nil)
         setShelfContentOffset(0, in: panel)
         // Leave alpha at zero while hidden. Resetting it to one in the same run-loop
         // turn as `orderOut` can race WindowServer and briefly re-show the fully opaque
@@ -436,6 +449,35 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - Private
+
+    /// 把暗幕铺满面板所在的屏幕, 透明度从 0 开始, 由调用方随面板一起淡入。
+    /// 层级和面板相同 (.statusBar), 盖住 Dock 和菜单栏; 截图/共享屏幕时是否隐藏跟面板一致。
+    private func prepareDimmingPanel(on screen: NSScreen, below panel: KeyablePanel) -> NSPanel {
+        let dim: NSPanel
+        if let existing = dimmingPanel {
+            dim = existing
+        } else {
+            dim = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                          backing: .buffered, defer: false)
+            dim.isOpaque = false
+            dim.backgroundColor = .clear
+            dim.hasShadow = false
+            dim.ignoresMouseEvents = true
+            dim.hidesOnDeactivate = false
+            dim.isReleasedWhenClosed = false
+            dim.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            let vignette = ScreenVignetteView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            vignette.autoresizingMask = [.width, .height]
+            dim.contentView = vignette
+            dimmingPanel = dim
+        }
+        dim.level = panel.level
+        dim.sharingType = hideDuringScreenSharing ? .none : .readOnly
+        dim.setFrame(screen.frame, display: false)
+        dim.alphaValue = 0
+        dim.orderFront(nil)
+        return dim
+    }
 
     private func shelfContentView(in panel: KeyablePanel) -> NSView? {
         (panel.contentView as? ShelfClippingView)?.shelfContent
@@ -580,5 +622,18 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         host.sharingType = hideDuringScreenSharing ? .none : .readOnly
         modalPanel = host
         return host
+    }
+}
+
+
+/// 唤出面板时的全屏暗幕: 径向渐变, 屏幕中心 4% 黑, 最远的角 20% 黑 (与觅见相同的数值),
+/// 四周比中间暗一些, 视线落到屏幕下方的面板上。
+private final class ScreenVignetteView: NSView {
+    override var isOpaque: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let gradient = NSGradient(starting: NSColor.black.withAlphaComponent(0.04),
+                                  ending: NSColor.black.withAlphaComponent(0.20))
+        gradient?.draw(in: bounds, relativeCenterPosition: .zero)
     }
 }

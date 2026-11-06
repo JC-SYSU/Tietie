@@ -210,7 +210,7 @@ struct PanelSettings: View {
             }
 
             SettingsRow(label: String(localized: "Tint:"),
-                        help: String(localized: "Colors the glass itself, so refraction and highlights stay. Only Liquid Glass Regular and Clear can be tinted; 0 turns it off.")) {
+                        help: String(localized: "Liquid Glass is tinted in the material itself, so refraction and highlights stay; HUD Window, Sidebar and Window Background get a color layer on top. 0 turns it off.")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         // macOS 上 ColorPicker 打开系统原生色盘 (NSColorPanel)。透明度由下面的
@@ -226,6 +226,12 @@ struct PanelSettings: View {
                                   text: String(format: "%.1f", settings.panelTintOpacity))
                 }
                 .disabled(!settings.panelMaterial.supportsTint)
+            }
+
+            SettingsRow(label: String(localized: "Background:"),
+                        help: String(localized: "Dims the rest of the screen a little while the panel is open: lighter in the middle, darker toward the corners. Clicks still go through.")) {
+                Toggle(String(localized: "Dim the Screen"), isOn: $settings.dimsScreen)
+                    .toggleStyle(.checkbox)
             }
 
             SettingsDivider()

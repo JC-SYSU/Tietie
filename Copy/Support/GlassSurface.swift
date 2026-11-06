@@ -96,11 +96,11 @@ private struct GlassSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         Group {
             if reduceTransparency.isReduced {
-                content.background { VisualEffectMaterial(corners: corners, material: .hudWindow) }
+                content.background { VisualEffectMaterial(corners: corners, material: .hudWindow, tint: overlayTint) }
             } else if #available(macOS 26, *), let glass = liquidGlass {
                 content.glassEffect(glass, in: glassShape)
             } else {
-                content.background { VisualEffectMaterial(corners: corners, material: fallbackMaterial) }
+                content.background { VisualEffectMaterial(corners: corners, material: fallbackMaterial, tint: overlayTint) }
             }
         }
         // 内阴影: 描边模糊后裁回形状内缘, 得到柔和的向内暗边; 不参与命中测试。
@@ -124,6 +124,13 @@ private struct GlassSurfaceModifier: ViewModifier {
         case .glassIdentity: return .identity
         case .hudWindow, .sidebar, .windowBackground: return nil
         }
+    }
+
+    /// NSVisualEffectView 材质没有着色接口, 着色以一层同色半透明叠在材质上面 (在材质视图
+    /// 内部的子图层, 随材质一起裁圆角)。无材质 (identity) 不着色。
+    private var overlayTint: NSColor? {
+        guard material != .glassIdentity, let tint else { return nil }
+        return NSColor(tint)
     }
 
     /// NSVisualEffectView 材质: 选了这三种之一, 或系统低于 macOS 26 (此时 Liquid Glass
@@ -185,9 +192,16 @@ private final class ReduceTransparencyObserver: ObservableObject {
 private struct VisualEffectMaterial: NSViewRepresentable {
     let corners: GlassSurfaceCorners
     var material: NSVisualEffectView.Material = .hudWindow
+    /// 叠在材质上的颜色 (已含透明度); nil 不叠。
+    var tint: NSColor? = nil
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
+        let overlay = CALayer()
+        overlay.name = Self.tintLayerName
+        overlay.frame = view.bounds
+        overlay.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        overlay.backgroundColor = tint?.cgColor
         view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
@@ -195,11 +209,18 @@ private struct VisualEffectMaterial: NSViewRepresentable {
         view.layer?.cornerRadius = corners.fallbackRadius
         view.layer?.maskedCorners = corners.maskedCorners
         view.layer?.masksToBounds = true
+        view.layer?.addSublayer(overlay)
         return view
     }
 
+    private static let tintLayerName = "copy.tintOverlay"
+
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
+        if let overlay = nsView.layer?.sublayers?.first(where: { $0.name == Self.tintLayerName }) {
+            overlay.frame = nsView.bounds
+            overlay.backgroundColor = tint?.cgColor
+        }
         nsView.layer?.cornerRadius = corners.fallbackRadius
         nsView.layer?.maskedCorners = corners.maskedCorners
     }

@@ -502,6 +502,10 @@ final class AppCoordinator {
             self?.shelfViewModel.favoritesSettingChanged()
         }
         shelfController.panelFontSize = settings.panelFontSize
+        shelfController.dimsScreen = settings.dimsScreen
+        settings.onDimsScreenChange = { [weak self] on in
+            self?.shelfController.dimsScreen = on
+        }
         settings.onPanelFontSizeChange = { [weak self] size in
             self?.shelfController.setPanelFontSize(size)
         }
@@ -586,8 +590,11 @@ final class AppCoordinator {
         recentCaptureTimes = recentCaptureTimes.filter { now.timeIntervalSince($0) < 10 }
         guard recentCaptureTimes.count >= 3 else { return }
         defaults.set(true, forKey: "hasSeenPasteStackHint")
-        let hotkey = KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description ?? "⇧⌘C"
-        HUD.show("Collecting a few things? Press \(hotkey) for the paste stack.", duration: 3.0)
+        if let hotkey = KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description {
+            HUD.show("Collecting a few things? Press \(hotkey) for the paste stack.", duration: 3.0)
+        } else {
+            HUD.show("Collecting a few things? Open the paste stack from the shelf's top-right button.", duration: 3.0)
+        }
     }
 
     /// Prunes items past the configured retention window on the persist queue,

@@ -6,7 +6,8 @@ import Quartz
 extension KeyboardShortcuts.Name {
     /// 默认 ⌥⌘V: ⇧⌘V 让给 `pasteLatestPlainText`。只影响没存过这个快捷键的新配置。
     static let toggleShelf = Self("toggleShelf", initial: .init(.v, modifiers: [.command, .option]))
-    static let togglePasteStack = Self("togglePasteStack", initial: .init(.c, modifiers: [.command, .shift]))
+    /// 出厂不绑定 (作者本机设置), 在 设置 → 快捷键 里设。
+    static let togglePasteStack = Self("togglePasteStack")
     static let pasteNextFromStack = Self("pasteNextFromStack", initial: .init(.n, modifiers: [.control, .option, .command]))
     /// No default shortcut — the user opts in from Settings. Pastes the most recent
     /// history item directly into the frontmost app without opening the shelf.

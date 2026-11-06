@@ -115,7 +115,7 @@ struct ShelfRootView: View {
         .onChange(of: hasActiveModal) { _, active in viewModel.onModalPresent?(active) }
     }
 
-    /// 设置里的玻璃着色; 不透明度为 0 或材质不支持着色时为 nil。
+    /// 设置里的着色; 不透明度为 0 或选了无材质时为 nil。
     private var panelTint: Color? {
         let settings = viewModel.settings
         guard settings.panelMaterial.supportsTint, settings.panelTintOpacity > 0 else { return nil }
@@ -236,8 +236,9 @@ private struct ShelfHeader: View {
 private struct PasteStackButton: View {
     @Bindable var viewModel: ShelfViewModel
 
-    private var hotkey: String {
-        KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description ?? "⇧⌘C"
+    /// 没绑定快捷键时为 nil: 提示里不显示键位, 按住 ⌥ 也不出键帽。
+    private var hotkey: String? {
+        KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description
     }
 
     var body: some View {
@@ -245,10 +246,10 @@ private struct PasteStackButton: View {
             IconButton(systemName: "square.stack.3d.up", fontSize: 15,
                        size: CGSize(width: 34, height: 30),
                        tint: viewModel.isPasteStackOn ? Color.accentColor : nil,
-                       help: "Paste Stack (\(hotkey))") {
+                       help: hotkey.map { "Paste Stack (\($0))" } ?? "Paste Stack") {
                 viewModel.onTogglePasteStack?()
             }
-            if viewModel.optionHeld {
+            if viewModel.optionHeld, let hotkey {
                 KeyCap(text: hotkey)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
