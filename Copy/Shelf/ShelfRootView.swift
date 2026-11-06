@@ -235,6 +235,7 @@ private struct ShelfHeader: View {
 /// hotkey as a `KeyCap`, matching the shelf's other ⌥-hold hints (the tab number badges).
 private struct PasteStackButton: View {
     @Bindable var viewModel: ShelfViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 没绑定快捷键时为 nil: 提示里不显示键位, 按住 ⌥ 也不出键帽。
     private var hotkey: String? {
@@ -251,7 +252,7 @@ private struct PasteStackButton: View {
             }
             if viewModel.optionHeld, let hotkey {
                 KeyCap(text: hotkey)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
             }
         }
         .animation(.easeOut(duration: 0.12), value: viewModel.optionHeld)
@@ -469,6 +470,7 @@ private struct TabPill: View {
     let action: () -> Void
     @State private var isHovering = false
     @Environment(\.panelFontSize) private var panelFontSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tintColor: Color? {
         tint.isEmpty ? nil : Tokens.color(fromHex: tint)
@@ -537,8 +539,9 @@ private struct TabPill: View {
         // A drop-targeted tab visibly pops so it's unmistakable which pinboard a dragged
         // card will land in, even when the cursor's drag chip sits near it; the drop
         // callout hangs from it (see `PinboardDropCalloutLayer`).
-        .scaleEffect(isDropTargeted ? 1.08 : 1)
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isDropTargeted)
+        .scaleEffect(isDropTargeted && !reduceMotion ? 1.08 : 1)
+        .animation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.2, dampingFraction: 0.7),
+                   value: isDropTargeted)
         // A plain tappable surface, NOT a Button: a SwiftUI `Button` on macOS fights the
         // drag session for the mouse-up, so dragging a card onto a pinboard landed only
         // intermittently; a tap gesture on a plain view coexists with the drag cleanly.
@@ -562,6 +565,7 @@ private struct TabPill: View {
 
 private struct ShelfItemsRow: View {
     @Bindable var viewModel: ShelfViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentPinboardID: Int64? {
         if case .pinboard(let id) = viewModel.tab { return id }
@@ -703,7 +707,7 @@ private struct ShelfItemsRow: View {
         .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
         // 整页替换的滑动过渡: 方向跟随最近一次翻页。
         .id(viewModel.pageIndex)
-        .transition(.asymmetric(
+        .transition(reduceMotion ? .opacity : .asymmetric(
             insertion: viewModel.lastFlipDirection >= 0
                 ? .move(edge: .trailing).combined(with: .opacity)
                 : .move(edge: .leading).combined(with: .opacity),
@@ -793,6 +797,7 @@ private struct PageEdgeButton: View {
     var enabled: Bool = true
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -803,7 +808,7 @@ private struct PageEdgeButton: View {
                 .background(Circle().fill(Color(nsColor: .windowBackgroundColor).opacity(enabled ? 0.85 : 0.5)))
                 .overlay(Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
                 .shadow(color: .black.opacity(enabled ? 0.18 : 0), radius: 3, y: 1)
-                .scaleEffect(hovering && enabled ? 1.08 : 1)
+                .scaleEffect(hovering && enabled && !reduceMotion ? 1.08 : 1)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

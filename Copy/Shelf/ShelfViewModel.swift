@@ -547,12 +547,19 @@ final class ShelfViewModel {
         followSelection()
     }
 
-    /// 键盘/跳转让选中变化后, 翻到选中卡所在页并锚定它。
+    /// 键盘/跳转让选中变化后, 翻到选中卡所在页并锚定它。换页时和滚轮、箭头翻页走同一个
+    /// 滑动过渡 (方向按页码增减设置), 以前这里直接改页码, 方向键走到页尾是硬切。
     private func followSelection() {
         guard let primary = selection.primary,
               let index = items.firstIndex(where: { $0.uuid == primary }) else { return }
-        pageIndex = index / max(1, layoutCapacity)
+        let target = index / max(1, layoutCapacity)
+        guard target != pageIndex else { return }
+        lastFlipDirection = target > pageIndex ? 1 : -1
+        withAnimation(Self.pageFlipAnimation) { pageIndex = target }
     }
+
+    /// 翻页动画, 所有换页入口共用。减弱动态效果时视图那边换成纯淡入淡出 (见 ShelfItemsRow)。
+    static let pageFlipAnimation: Animation = .easeOut(duration: 0.25)
 
     // MARK: 翻页滚动
 
@@ -605,7 +612,7 @@ final class ShelfViewModel {
         let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: capacity)
         guard direction != 0, maxPage > 0 else { return }
         lastFlipDirection = direction
-        withAnimation(.easeOut(duration: 0.25)) {
+        withAnimation(Self.pageFlipAnimation) {
             pageIndex = min(max(pageIndex + direction, 0), maxPage)
         }
         let index = min(pageIndex * capacity, max(0, items.count - 1))

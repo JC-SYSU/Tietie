@@ -182,6 +182,8 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// The close animation: how long it takes and how far the shelf sinks while it fades.
     private static let closeDuration: TimeInterval = 0.2
     private static let closeDrop: CGFloat = 26
+    /// 打开时内容从窗口底边下方多远升上来。
+    private static let openRise: CGFloat = 24
 
     var onKeyEvent: ((NSEvent) -> Bool)?
     /// Called on every modifier-key change while the shelf is open (⌘-hold hints).
@@ -357,16 +359,22 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
                 dim?.animator().alphaValue = 1
             }
         } else {
-            panel.setFrame(reduceMotion ? frame : frame.offsetBy(dx: 0, dy: -24), display: false)
+            // 窗口直接放在最终位置不动, 只让里面的内容视图从下方 24pt 升上来, 和关闭时
+            // 「内容下沉、窗口不动」对称。以前这里动画的是窗口 frame, 正是关闭那段注释说要
+            // 避开的做法: 移动窗口会拖着实时玻璃划过屏幕, WindowServer 每帧重新取样。
+            panel.setFrame(frame, display: false)
             panel.alphaValue = 0
+            setShelfContentOffset(reduceMotion ? 0 : -Self.openRise, in: panel)
             panel.makeKeyAndOrderFront(nil)
             dim?.order(.below, relativeTo: panel.windowNumber)
             NSApp.activate(ignoringOtherApps: true)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = reduceMotion ? 0 : 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                // 减速曲线, 前段比系统 easeOut 更快, 落点更利落 (Material 3 emphasized
+                // decelerate)。不用过冲: 内容越过终点会在屏幕底边露出一条缝。
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.05, 0.7, 0.1, 1)
                 panel.animator().alphaValue = 1
-                panel.animator().setFrame(frame, display: true)
+                if !reduceMotion { shelfContentView(in: panel)?.animator().setFrameOrigin(.zero) }
                 dim?.animator().alphaValue = 1
             }
         }

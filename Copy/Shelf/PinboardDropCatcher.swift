@@ -117,6 +117,7 @@ struct PinboardDropCalloutLayer: View {
 }
 
 private struct PinboardDropCalloutView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let callout: PinboardDropCallout
     let pinboard: Pinboard
     /// The arrow's x position, from the callout's leading edge.
@@ -175,7 +176,7 @@ private struct PinboardDropCalloutView: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white)
-                    .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.2).combined(with: .opacity))
             } else if let emoji = pinboard.emoji, !emoji.isEmpty {
                 Text(emoji).font(.system(size: 13))
             } else {
