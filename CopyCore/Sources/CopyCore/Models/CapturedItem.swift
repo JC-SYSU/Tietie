@@ -18,6 +18,8 @@ public struct CapturedItem: Equatable, Sendable {
     public let representations: [CapturedRepresentation]
     public let sourceBundleID: String?
     public let sourceAppName: String?
+    /// 黑名单规则要求限时保留时, 入库后过多久删除。nil = 不限时。
+    public var expiresAfter: TimeInterval? = nil
 
     public init(kind: ItemKind, plainText: String, hashData: Data,
                 representations: [CapturedRepresentation],

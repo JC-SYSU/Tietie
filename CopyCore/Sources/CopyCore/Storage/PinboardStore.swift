@@ -97,6 +97,9 @@ public struct PinboardStore {
             try db.execute(sql:
                 "INSERT INTO pinboard_item (pinboardId, itemId, sortIndex) VALUES (?, ?, ?)",
                 arguments: [pinboardID, itemID, nextIndex])
+            // 放进收藏板 = 用户要留着, 取消「限时保留」。
+            try db.execute(sql: "UPDATE item SET expiresAt = NULL WHERE id = ? AND expiresAt IS NOT NULL",
+                           arguments: [itemID])
         }
     }
 

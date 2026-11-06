@@ -162,6 +162,13 @@ public final class DatabaseManager {
                 t.add(column: "fileName", .text)
             }
         }
+        // v7: 捕获规则的「限时保留」。部分索引只收有到期时间的行, 平时几乎是空的。
+        migrator.registerMigration("v7") { db in
+            try db.alter(table: "item") { t in
+                t.add(column: "expiresAt", .datetime)
+            }
+            try db.execute(sql: "CREATE INDEX item_on_expiresAt ON item(expiresAt) WHERE expiresAt IS NOT NULL")
+        }
         return migrator
     }
 

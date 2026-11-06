@@ -21,7 +21,7 @@ struct SettingsView: View {
         case .copyPaste: CopyPasteSettings(settings: settings)
         case .shortcuts: ShortcutsSettings(settings: settings)
         case .history: HistorySettings(settings: settings, store: store)
-        case .privacy: PrivacySettings(settings: settings)
+        case .privacy: PrivacySettings(settings: settings, store: store)
         case .about: AboutSettings(settings: settings)
         }
     }

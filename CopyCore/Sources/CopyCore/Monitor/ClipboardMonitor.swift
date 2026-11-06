@@ -15,6 +15,8 @@ public final class ClipboardMonitor {
     private let pollInterval: TimeInterval
     private let frontmostApp: () -> (bundleID: String?, name: String?)
     private let onCapture: (CapturedItem) -> Void
+    /// 用户规则对每次复制的判定 (保留的不报)。在主队列上调用, app 用它记命中计数。
+    public var onVerdict: ((CaptureVerdict) -> Void)?
     private var timer: DispatchSourceTimer?
     private var lastChangeCount: Int
 
@@ -54,10 +56,30 @@ public final class ClipboardMonitor {
         lastChangeCount = count
         guard !isPaused else { return }
 
+        let types = pasteboard.typeIdentifiers()
+        guard !RulesEngine.hasSkipMarker(types) else { return }
         let source = frontmostApp()
-        guard rules.shouldCapture(types: pasteboard.typeIdentifiers(),
-                                  sourceBundleID: source.bundleID) else { return }
-        guard let item = Self.snapshot(from: pasteboard, source: source) else { return }
+        let isRemote = types.contains(RulesEngine.remoteClipboardType)
+        // 来源 app、通用剪贴板这两项不用读内容就能定; 定了「不保存」就不读剪贴板。
+        if case .decided(let verdict) = rules.evaluator.preflight(sourceBundleID: source.bundleID, isRemote: isRemote),
+           verdict.outcome == .drop {
+            onVerdict?(verdict)
+            return
+        }
+        guard var item = Self.snapshot(from: pasteboard, source: source) else { return }
+        let verdict = rules.evaluator.evaluate(RuleSubject(captured: item, isRemote: isRemote))
+        if verdict.outcome != .keep || !verdict.timedOutKeywords.isEmpty || !verdict.timedOutPresets.isEmpty {
+            onVerdict?(verdict)
+        }
+        switch verdict.outcome {
+        case .drop:
+            // 不保存的内容也不改写系统剪贴板, 与原来「排除的 app」一致: 剪贴板原样不动。
+            return
+        case .expire(let minutes):
+            item.expiresAfter = TimeInterval(minutes * 60)
+        case .keep:
+            break
+        }
         if rewritesSystemClipboard, item.kind != .image {
             rewriteSystemClipboard()
         }

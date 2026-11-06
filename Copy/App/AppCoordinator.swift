@@ -18,6 +18,8 @@ final class AppCoordinator {
     private let persistQueue = DispatchQueue(label: "com.tarikbc.copy.persist", qos: .utility)
     private let saveErrors = SaveErrorReporter()
     private var retentionTimer: DispatchSourceTimer?
+    /// 「限时保留」条目的到期删除。
+    private let expiryScheduler: ExpiryScheduler
     private(set) var isPaused = false
     /// True in a DEBUG build when the demo-mode flag is set (toggled from the status menu):
     /// runs against an isolated, reseeded demo database with curated mock data, and never
@@ -483,19 +485,22 @@ final class AppCoordinator {
         let linkFetcher = LinkMetadataFetcher(store: store)
         let ocrController = OCRController(store: store)
         let reporter = saveErrors
+        let expiryScheduler = ExpiryScheduler(store: store, queue: persistQueue)
+        self.expiryScheduler = expiryScheduler
         self.monitor = ClipboardMonitor(
             pasteboard: NSPasteboard.general,
             rewriter: NSPasteboard.general,
-            rules: RulesEngine(excludedBundleIDs: Set(settings.excludedBundleIDs)),
+            rules: RulesEngine(rules: settings.captureRules),
             frontmostApp: {
                 let app = NSWorkspace.shared.frontmostApplication
                 return (app?.bundleIdentifier, app?.localizedName)
             },
-            onCapture: { [persistQueue, linkFetcher, ocrController, settings, pasteStackModel] captured in
+            onCapture: { [persistQueue, linkFetcher, ocrController, settings, pasteStackModel, expiryScheduler] captured in
                 persistQueue.async {
                     do {
                         let saved = try store.save(captured)
                         DispatchQueue.main.async {
+                            if let due = saved.expiresAt { expiryScheduler.schedule(at: due) }
                             linkFetcher.fetchIfNeeded(for: saved, enabled: settings.fetchLinkPreviews)
                             ocrController.recognizeIfNeeded(for: saved, enabled: settings.recognizeImageText)
                             // While the stack is active, new copies join the queue too —
@@ -525,9 +530,16 @@ final class AppCoordinator {
         settings.onTrailingNewlineScopeChange = { [weak self] scope in
             self?.monitor.rewritesSystemClipboard = scope == .systemClipboard
         }
-        settings.onRulesChange = { [weak self] excludedBundleIDs in
-            self?.monitor.rules = RulesEngine(excludedBundleIDs: excludedBundleIDs)
+        settings.onRulesChange = { [weak self] rules in
+            self?.monitor.rules = RulesEngine(rules: rules)
         }
+        // 判定在主队列上产生 (监控的定时器跑在主队列), 直接记计数。
+        monitor.onVerdict = { [settings] verdict in
+            MainActor.assumeIsolated {
+                if let rule = verdict.decidedBy { settings.recordRuleHit(rule) }
+            }
+        }
+        settings.onExpiryScheduleChange = { [expiryScheduler] in expiryScheduler.purgeNow() }
         settings.onHideDuringScreenSharingChange = { [weak self] hide in
             self?.shelfController.setHideDuringScreenSharing(hide)
             self?.pasteStackController.setHideDuringScreenSharing(hide)
@@ -582,6 +594,7 @@ final class AppCoordinator {
         monitor.start()
         runRetentionPrune()
         scheduleRetentionTimer()
+        expiryScheduler.purgeNow()
     }
 
     /// Isolated, reset-every-launch demo database beside the real `Copy/copy.sqlite`, so
@@ -1018,5 +1031,59 @@ final class AppCoordinator {
     private func promptForAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
+    }
+}
+
+/// 「限时保留」条目到期即删: 只挂一个一次性定时器, 指向最近一条的到期时间; 删完再
+/// 指向下一条。用墙钟时间 (wallDeadline), 合盖睡眠期间到期的条目在唤醒后马上删。
+/// 只在主线程上调用。删除在持久化队列上做, 与捕获写入串行。
+final class ExpiryScheduler {
+    private let store: ItemStore
+    private let queue: DispatchQueue
+    private var timer: DispatchSourceTimer?
+    private var scheduledFor: Date?
+
+    init(store: ItemStore, queue: DispatchQueue) {
+        self.store = store
+        self.queue = queue
+    }
+
+    /// 有一条新的到期时间。比当前挂着的更早才改挂。
+    func schedule(at date: Date) {
+        if let scheduledFor, scheduledFor <= date { return }
+        arm(at: date)
+    }
+
+    /// 立即删一次到期的, 再挂到下一条 (启动时、按规则清理历史后调用)。
+    func purgeNow() {
+        let store = self.store
+        queue.async {
+            do {
+                let result = try store.purgeExpired()
+                if result.deleted > 0 { NSLog("Copy: removed \(result.deleted) expired item(s)") }
+                DispatchQueue.main.async { [weak self] in self?.rearm(result.nextExpiry) }
+            } catch {
+                NSLog("Copy: expiry purge failed: \(error)")
+            }
+        }
+    }
+
+    private func rearm(_ next: Date?) {
+        timer?.cancel()
+        timer = nil
+        scheduledFor = nil
+        if let next { arm(at: next) }
+    }
+
+    private func arm(at date: Date) {
+        timer?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        // 多等 1 秒, 让到期时间严格早于删除时的「现在」。
+        let delay = max(0, date.timeIntervalSinceNow) + 1
+        t.schedule(wallDeadline: .now() + delay, leeway: .seconds(2))
+        t.setEventHandler { [weak self] in self?.purgeNow() }
+        t.resume()
+        timer = t
+        scheduledFor = date
     }
 }

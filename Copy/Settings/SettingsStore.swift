@@ -1,4 +1,5 @@
 import AppKit
+import CopyCore
 import Foundation
 import Observation
 
@@ -161,16 +162,18 @@ enum RetentionPeriod: String, CaseIterable {
     static let sliderOrder: [RetentionPeriod] = [.day, .week, .month, .threeMonths, .unlimited]
 }
 
-/// UserDefaults-backed app settings. Mutating `excludedBundleIDs` (directly or via
-/// `addExcludedApp`/`removeExcludedApp`) fires `onRulesChange` so the coordinator can
-/// push a fresh `RulesEngine` into the clipboard monitor.
+/// UserDefaults-backed app settings. Mutating `captureRules` fires `onRulesChange` so the
+/// coordinator can push a fresh `RulesEngine` into the clipboard monitor.
 @MainActor
 @Observable
 final class SettingsStore {
     static let retentionKey = "retentionPeriod"
     static let fetchLinkPreviewsKey = "fetchLinkPreviews"
     static let recognizeImageTextKey = "recognizeImageText"
+    /// 旧版「排除的 App」列表。迁移到 `captureRules` 后只读不写 (保留原值, 回退旧版 app 时还能用)。
     static let excludedBundleIDsKey = "excludedBundleIDs"
+    static let captureRulesKey = "captureRules.v1"
+    static let ruleHitCountsKey = "ruleHitCounts.v1"
     static let hideDuringScreenSharingKey = "hideDuringScreenSharing"
     static let favoritesEnabledKey = "favoritesEnabled"
     static let floatingShelfKey = "floatingShelf"
@@ -212,13 +215,17 @@ final class SettingsStore {
         }
     }
 
-    var excludedBundleIDs: [String] {
+    /// 白名单 / 黑名单捕获规则 (见 `CaptureRules`)。
+    var captureRules: CaptureRules {
         didSet {
-            guard excludedBundleIDs != oldValue else { return }
-            persistExcludedBundleIDs()
-            onRulesChange?(Set(excludedBundleIDs))
+            guard captureRules != oldValue else { return }
+            persistCaptureRules()
+            onRulesChange?(captureRules)
         }
     }
+
+    /// 每条规则拦下 (或设为限时保留) 了多少次, 键是 `RuleRef.key`。只存次数, 不存内容。
+    private(set) var ruleHitCounts: [String: Int]
 
     /// When true, the shelf panel and Paste Stack palette set `NSWindowSharingType.none`
     /// so they're excluded from screen recordings/captures/shares (see
@@ -397,7 +404,9 @@ final class SettingsStore {
         }
     }
 
-    @ObservationIgnored var onRulesChange: ((Set<String>) -> Void)?
+    @ObservationIgnored var onRulesChange: ((CaptureRules) -> Void)?
+    /// 设置页按规则清理历史后调用, 让 coordinator 重排限时保留的删除时间。
+    @ObservationIgnored var onExpiryScheduleChange: (() -> Void)?
     /// Fired by the About pane's "View Onboarding Again" button. Wired to
     /// `AppCoordinator.showOnboarding()`, which re-presents the welcome flow from step 0.
     @ObservationIgnored var onShowOnboarding: (() -> Void)?
@@ -467,19 +476,22 @@ final class SettingsStore {
         candidateLimit = [10, 25, 50].contains(savedLimit) ? savedLimit! : 25
         trailingNewlineScope = defaults.string(forKey: Self.trailingNewlineScopeKey)
             .flatMap(TrailingNewlineScope.init(rawValue:)) ?? .history
-        if let data = defaults.data(forKey: Self.excludedBundleIDsKey),
-           let decoded = try? JSONDecoder().decode([String].self, from: data) {
-            excludedBundleIDs = decoded.sorted()
-        } else if defaults.object(forKey: Self.excludedBundleIDsKey) == nil,
-                  !defaults.bool(forKey: "hasOnboarded") {
-            // Only a new profile gets defaults; preserve existing lists, including [].
-            // 出厂不排除任何 app (作者本机设置)。密码管理器标记为隐藏的内容另有规则拦截,
-            // 不靠这个列表。
-            excludedBundleIDs = []
-            persistExcludedBundleIDs()
+        if let data = defaults.data(forKey: Self.captureRulesKey),
+           let decoded = try? JSONDecoder().decode(CaptureRules.self, from: data) {
+            captureRules = decoded
         } else {
-            excludedBundleIDs = []
+            // 第一次用规则功能: 出厂规则 + 原来「排除的 App」列表并进黑名单。出厂不排除
+            // 任何 app (作者本机设置); 密码管理器标记为隐藏的内容由固定标记拦截。
+            var rules = CaptureRules.factoryDefault
+            if let data = defaults.data(forKey: Self.excludedBundleIDsKey),
+               let legacy = try? JSONDecoder().decode([String].self, from: data) {
+                rules.blacklist.apps = Array(Set(legacy)).sorted()
+            }
+            captureRules = rules
+            // init 里还不能调实例方法 (ruleHitCounts 尚未赋值), 直接写。
+            if let data = try? JSONEncoder().encode(rules) { defaults.set(data, forKey: Self.captureRulesKey) }
         }
+        ruleHitCounts = (defaults.dictionary(forKey: Self.ruleHitCountsKey) as? [String: Int]) ?? [:]
         // 设置面板已移除以下选项, 统一固定值: 标准尺寸 / 边缘附着 / 点击选中。
         compactShelf = false
         floatingShelf = false
@@ -488,17 +500,20 @@ final class SettingsStore {
 
     private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
-    func addExcludedApp(bundleID: String) {
-        guard !excludedBundleIDs.contains(bundleID) else { return }
-        excludedBundleIDs = (excludedBundleIDs + [bundleID]).sorted()
+    private func persistCaptureRules() {
+        guard let data = try? JSONEncoder().encode(captureRules) else { return }
+        defaults.set(data, forKey: Self.captureRulesKey)
     }
 
-    func removeExcludedApp(bundleID: String) {
-        excludedBundleIDs.removeAll { $0 == bundleID }
+    func recordRuleHit(_ rule: RuleRef) {
+        ruleHitCounts[rule.key, default: 0] += 1
+        defaults.set(ruleHitCounts, forKey: Self.ruleHitCountsKey)
     }
 
-    private func persistExcludedBundleIDs() {
-        guard let data = try? JSONEncoder().encode(excludedBundleIDs) else { return }
-        defaults.set(data, forKey: Self.excludedBundleIDsKey)
+    func hitCount(_ rule: RuleRef) -> Int { ruleHitCounts[rule.key] ?? 0 }
+
+    func resetRuleHits() {
+        ruleHitCounts = [:]
+        defaults.removeObject(forKey: Self.ruleHitCountsKey)
     }
 }

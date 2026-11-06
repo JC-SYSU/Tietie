@@ -22,7 +22,7 @@ public struct ItemStore {
     public static let userCreatedAppName = "Copy"
     public static let userCreatedAppBundleID = "com.tarikbc.Copy"
 
-    private let writer: any DatabaseWriter
+    let writer: any DatabaseWriter
     private let blobs: BlobStore
     private let images: ImageFileStore
 
@@ -48,6 +48,11 @@ public struct ItemStore {
                 existing.appName = captured.sourceAppName
                 existing.sizeBytes = captured.representations.reduce(0) { $0 + $1.data.count }
                 existing.kind = captured.kind
+                // 再次复制时按这一次的规则重新定到期时间; 收藏和收藏板里的条目不设。
+                let isPinned = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM pinboard_item WHERE itemId = ?)",
+                                                 arguments: [existing.id!]) ?? false
+                existing.expiresAt = existing.isFavorite || isPinned
+                    ? nil : captured.expiresAfter.map { now.addingTimeInterval($0) }
                 try existing.update(db)
 
                 // Exclude the favicon representation from both the old-blob-key lookup
@@ -77,6 +82,7 @@ public struct ItemStore {
                 sizeBytes: captured.representations.reduce(0) { $0 + $1.data.count },
                 isFavorite: false
             )
+            item.expiresAt = captured.expiresAfter.map { now.addingTimeInterval($0) }
             try item.insert(db)
             let stored = try insertRepresentations(captured.representations, kind: captured.kind,
                                                    createdAt: now, itemID: item.id!, in: db)
@@ -411,8 +417,8 @@ public struct ItemStore {
     public func setFavorite(itemID: Int64, _ favorite: Bool) throws {
         try writer.write { db in
             try db.execute(
-                sql: "UPDATE item SET isFavorite = ? WHERE id = ?",
-                arguments: [favorite, itemID])
+                sql: "UPDATE item SET isFavorite = ?, expiresAt = CASE WHEN ? THEN NULL ELSE expiresAt END WHERE id = ?",
+                arguments: [favorite, favorite, itemID])
         }
     }
 
@@ -473,7 +479,7 @@ public struct ItemStore {
     }
 
     /// Deletes matching items and any blobs no longer referenced afterwards.
-    private func deleteItems(_ request: QueryInterfaceRequest<ClipItem>, in db: Database) throws {
+    func deleteItems(_ request: QueryInterfaceRequest<ClipItem>, in db: Database) throws {
         let ids = try request.selectPrimaryKey(as: Int64.self).fetchAll(db)
         guard !ids.isEmpty else { return }
 

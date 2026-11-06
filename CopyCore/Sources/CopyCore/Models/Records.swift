@@ -18,6 +18,9 @@ public struct ClipItem: Codable, Equatable, Identifiable, FetchableRecord, Mutab
     public var isFavorite: Bool
     public var title: String?
     public var recognizedText: String?
+    /// 黑名单规则「限时保留」的到期时间, 到期由 `ItemStore.purgeExpired` 删除。收藏或放进
+    /// 收藏板时清空 (用户明确要留)。nil = 不限时。
+    public var expiresAt: Date? = nil
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
