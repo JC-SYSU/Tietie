@@ -1055,6 +1055,8 @@ final class ShelfViewModel {
     /// under it — the filing target for cards, the insertion edge for a dragged tab — and
     /// returns whether there is one, which decides whether the drop is accepted there.
     func shelfDragMoved(_ kind: ShelfDrag.Kind, to point: CGPoint) -> Bool {
+        // 拖拽回到面板里: 取消还没到点的缩回。
+        dragOutRetractTask?.cancel()
         let target = PinboardTabHitTest.pinboard(at: point, in: pinboardTabFrames)
         switch kind {
         case .cards:
@@ -1075,6 +1077,22 @@ final class ShelfViewModel {
         return target != nil
     }
 
+    /// 卡片拖出面板时请求面板缩回 (AppCoordinator 接到面板控制器)。
+    @ObservationIgnored var onRequestDragOutRetract: (() -> Void)?
+    @ObservationIgnored private var dragOutRetractTask: Task<Void, Never>?
+
+    /// 卡片拖出面板上沿: 0.12s 后面板缩回。收藏板标签贴着面板上沿, 手稍微带出去又马上
+    /// 回来不算; 期间拖拽回到面板 (`shelfDragMoved`) 就取消。拖标签排序不缩回。
+    func cardDragLeftShelf() {
+        guard case .cards = activeShelfDrag else { return }
+        dragOutRetractTask?.cancel()
+        dragOutRetractTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let self, !Task.isCancelled, case .cards = self.activeShelfDrag else { return }
+            self.onRequestDragOutRetract?()
+        }
+    }
+
     /// The drag left the shelf (it may come back) or ended: drop every tab highlight.
     func shelfDragExited() {
         dropTargetedPinboardID = nil
@@ -1085,6 +1103,7 @@ final class ShelfViewModel {
 
     /// The drag session ended, dropped or not.
     func shelfDragEnded() {
+        dragOutRetractTask?.cancel()
         shelfDragExited()
         activeShelfDrag = nil
     }

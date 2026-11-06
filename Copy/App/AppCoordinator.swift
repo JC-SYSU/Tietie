@@ -66,7 +66,10 @@ final class AppCoordinator {
             host.onDragMoved = { [weak self] kind, point in
                 self?.shelfViewModel.shelfDragMoved(kind, to: point) ?? false
             }
-            host.onDragExited = { [weak self] in self?.shelfViewModel.shelfDragExited() }
+            host.onDragExited = { [weak self] in
+                self?.shelfViewModel.shelfDragExited()
+                self?.shelfViewModel.cardDragLeftShelf()
+            }
             host.onDragEnded = { [weak self] in self?.shelfViewModel.shelfDragEnded() }
             host.onCardDrop = { [weak self] point, uuids in
                 self?.shelfViewModel.fileDroppedCards(uuids, at: point) ?? false
@@ -78,6 +81,13 @@ final class AppCoordinator {
         }
         controller.onDidHide = { [weak self] in
             self?.shelfViewModel.clearTransientState()
+        }
+        // 卡片拖出面板: 面板缩回让出下面的输入框; 松手后清掉拖拽状态。
+        shelfViewModel.onRequestDragOutRetract = { [weak controller] in
+            controller?.retractForDragOut()
+        }
+        controller.onDragOutEnded = { [weak self] in
+            self?.shelfViewModel.shelfDragEnded()
         }
         controller.onShow = { [weak self] in
             self?.shelfViewModel.prepareForShow()

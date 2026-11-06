@@ -214,6 +214,14 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// Bumped by both `show()` and each `hide()` so a stale close animation's completion
     /// handler doesn't order the panel out after a newer show/hide has superseded it.
     private var closeToken = 0
+    /// 卡片被拖出面板后面板已缩回、拖拽还没结束。此时面板窗口已 orderOut, 但不做关闭时
+    /// 的收尾 (清选中、切回前一个 app), 要等松开鼠标后再做, 免得拖拽中途改动卡片列表。
+    private(set) var isRetractedForDrag = false
+    /// 轮询鼠标是否松开。拖拽进行时 AppKit 在自己的事件循环里跟踪鼠标, 面板窗口已不在
+    /// 屏幕上, `draggingEnded` 不保证还会送到, 所以用定时器查 `pressedMouseButtons`。
+    private var dragEndPoll: Timer?
+    /// 拖拽在面板缩回后结束 (放下或取消)。AppCoordinator 用它清掉视图模型里的拖拽状态。
+    var onDragOutEnded: (() -> Void)?
     private var hideDuringScreenSharing: Bool
 
     private var floatingShelf: Bool
@@ -332,6 +340,12 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         // re-opening the shelf, landing in whatever app is frontmost seconds later.
         // Re-summoning the shelf is them changing their mind, so drop it.
         pendingHideCompletions.removeAll()
+        // 拖拽中途又唤出面板: 不再等松手收尾, 面板直接回来。
+        if isRetractedForDrag {
+            dragEndPoll?.invalidate()
+            dragEndPoll = nil
+            isRetractedForDrag = false
+        }
         onShow?()
 
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -442,6 +456,93 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         let completions = pendingHideCompletions
         pendingHideCompletions.removeAll()
         completions.forEach { $0() }
+    }
+
+    /// 卡片拖出面板上沿时调用: 面板按关闭的样子下沉淡出 (比普通关闭短), 然后 orderOut,
+    /// 让面板下面的窗口和输入框能接住拖拽。关闭收尾等松开鼠标后再做。
+    func retractForDragOut() {
+        guard let panel, isVisible, !isHiding, !isRetractedForDrag else { return }
+        isRetractedForDrag = true
+        isHiding = true
+        removeKeyMonitor()
+        closeToken += 1
+        let token = closeToken
+        let finish = { [weak self] in
+            guard let self, self.closeToken == token else { return }
+            panel.orderOut(nil)
+            self.setShelfContentOffset(0, in: panel)
+            self.isHiding = false
+            self.startDragEndPoll()
+        }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            finish()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.dragRetractDuration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            panel.animator().alphaValue = 0
+            shelfContentView(in: panel)?.animator().setFrameOrigin(NSPoint(x: 0, y: -Self.closeDrop))
+        } completionHandler: {
+            MainActor.assumeIsolated { finish() }
+        }
+    }
+
+    /// 拖出时面板缩回的时长, 比普通关闭 (0.2s) 短: 用户正拖着东西往外走, 面板要尽快让开。
+    private static let dragRetractDuration: TimeInterval = 0.16
+
+    private func startDragEndPoll() {
+        dragEndPoll?.invalidate()
+        let started = Date()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                // 左键松开即拖拽结束; 60 秒兜底, 防止异常情况下一直轮询。
+                if NSEvent.pressedMouseButtons & 1 == 0 || Date().timeIntervalSince(started) > 60 {
+                    timer.invalidate()
+                    self.dragEndPoll = nil
+                    self.finishDragOut()
+                }
+            }
+        }
+        // .common: 拖拽期间主线程跑在事件跟踪模式, 默认模式的定时器不触发。
+        RunLoop.main.add(timer, forMode: .common)
+        dragEndPoll = timer
+    }
+
+    /// 拖拽结束后的收尾, 对应普通关闭的 finishHide。焦点交给鼠标下面那个 app (卡片
+    /// 刚放进去的地方); 鼠标下没有别的 app 窗口时 (桌面、Dock) 退回唤出前的 app。
+    private func finishDragOut() {
+        guard isRetractedForDrag else { return }
+        isRetractedForDrag = false
+        onDragOutEnded?()
+        onDidHide?()
+        (Self.appUnderPointer() ?? previousApp)?.activate()
+        let completions = pendingHideCompletions
+        pendingHideCompletions.removeAll()
+        completions.forEach { $0() }
+    }
+
+    /// 鼠标所在位置最上层的、属于其他 app 的普通窗口所属的 app。窗口边界和所属进程
+    /// 不需要屏幕录制权限 (只有窗口标题需要)。
+    private static func appUnderPointer() -> NSRunningApplication? {
+        let mouse = NSEvent.mouseLocation
+        // CGWindowList 的坐标原点在主屏左上角, y 向下; NSEvent 的在左下角, y 向上。
+        guard let primaryHeight = NSScreen.screens.first?.frame.height else { return nil }
+        let point = CGPoint(x: mouse.x, y: primaryHeight - mouse.y)
+        let me = ProcessInfo.processInfo.processIdentifier
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for info in list {
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != me,
+                  (info[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
+                         width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0).contains(point)
+            else { continue }
+            return NSRunningApplication(processIdentifier: pid)
+        }
+        return nil
     }
 
     // MARK: - Private
