@@ -293,6 +293,3 @@
 "Liquid Glass is tinted in the material itself, so refraction and highlights stay; HUD Window, Sidebar and Window Background get a color layer on top. 0 turns it off." = "液态玻璃是给材质本身上色，折射和高光保留；HUD 窗口、边栏、窗口背景是在材质上叠一层颜色。透明度 0 表示不着色。";
 "Tabs, the shortcut legend and the page number on the panel. The panel grows a little for larger sizes." = "面板上的标签、快捷键图例和页码。字号调大时面板会略微加高。";
 "Above 1.0, cards use the display's HDR range and get brighter than normal white, so they stand out from the glass. Needs macOS 26 and an HDR display; uses a little more power." = "大于 1.0 时，卡片使用屏幕的 HDR 亮度范围，比普通白色更亮，和玻璃面板拉开对比。需要 macOS 26 和支持 HDR 的屏幕，会稍微多耗电。";
-"Background:" = "背景：";
-"Dim the Screen" = "唤出时屏幕变暗";
-"Dims the rest of the screen a little while the panel is open: lighter in the middle, darker toward the corners. Clicks still go through." = "面板打开时，屏幕其余部分略微变暗：中间浅、四角深。点击照常穿过暗幕。";

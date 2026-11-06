@@ -228,12 +228,6 @@ struct PanelSettings: View {
                 .disabled(!settings.panelMaterial.supportsTint)
             }
 
-            SettingsRow(label: String(localized: "Background:"),
-                        help: String(localized: "Dims the rest of the screen a little while the panel is open: lighter in the middle, darker toward the corners. Clicks still go through.")) {
-                Toggle(String(localized: "Dim the Screen"), isOn: $settings.dimsScreen)
-                    .toggleStyle(.checkbox)
-            }
-
             SettingsDivider()
 
             SettingsRow(label: String(localized: "Text Size:"),

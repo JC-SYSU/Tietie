@@ -190,7 +190,6 @@ final class SettingsStore {
     static let panelTintOpacityKey = "panelTintOpacity"
     static let panelFontSizeKey = "panelFontSize"
     static let cardBrightnessKey = "cardBrightness"
-    static let dimsScreenKey = "dimsScreenBehindShelf"
 
     var retention: RetentionPeriod {
         didSet {
@@ -384,15 +383,6 @@ final class SettingsStore {
         }
     }
     @ObservationIgnored var onPanelFontSizeChange: ((Double) -> Void)?
-    /// 唤出面板时整个屏幕变暗。
-    var dimsScreen: Bool {
-        didSet {
-            guard dimsScreen != oldValue else { return }
-            defaults.set(dimsScreen, forKey: Self.dimsScreenKey)
-            onDimsScreenChange?(dimsScreen)
-        }
-    }
-    @ObservationIgnored var onDimsScreenChange: ((Bool) -> Void)?
     /// 卡片底色的 HDR 亮度倍数, 1.0 = 普通白。大于 1 时用屏幕的 HDR 余量让卡片比
     /// SDR 白更亮; 屏幕不支持 HDR 时看起来和 1.0 一样。
     var cardBrightness: Double {
@@ -434,12 +424,11 @@ final class SettingsStore {
             retention = .unlimited
         }
         // 出厂默认值 (2026-11-06 起) 取自作者本机当时的设置: HUD 窗口材质、复制音效 Pop、
-        // 隐藏菜单栏图标、共享屏幕时隐藏、界面简体中文、不排除任何 app、唤出时屏幕变暗。
+        // 隐藏菜单栏图标、共享屏幕时隐藏、界面简体中文、不排除任何 app。
         panelMaterial = defaults.string(forKey: Self.panelMaterialKey).flatMap(PanelMaterial.init(rawValue:)) ?? .hudWindow
         panelTintHex = defaults.string(forKey: Self.panelTintHexKey) ?? "FFFFFF"
         panelTintOpacity = Self.clamp(defaults.object(forKey: Self.panelTintOpacityKey) as? Double ?? 0, 0, 1)
         panelFontSize = Self.clamp(defaults.object(forKey: Self.panelFontSizeKey) as? Double ?? 11, 10, 15)
-        dimsScreen = (defaults.object(forKey: Self.dimsScreenKey) as? Bool) ?? true
         cardBrightness = Self.clamp(defaults.object(forKey: Self.cardBrightnessKey) as? Double ?? 1, 1, 2)
         numberHintStyle = defaults.string(forKey: Self.numberHintStyleKey)
             .flatMap(NumberHintStyle.init(rawValue:)) ?? .bandKeycap
