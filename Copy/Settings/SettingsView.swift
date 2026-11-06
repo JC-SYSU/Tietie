@@ -16,6 +16,7 @@ struct SettingsView: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .general: GeneralSettings(settings: settings)
+        case .panel: PanelSettings(settings: settings)
         case .cards: CardsSettings(settings: settings)
         case .copyPaste: CopyPasteSettings(settings: settings)
         case .shortcuts: ShortcutsSettings(settings: settings)

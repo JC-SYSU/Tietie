@@ -192,3 +192,74 @@ struct CopyPasteSettings: View {
         }
     }
 }
+
+/// 「面板」页: 背景材质、玻璃着色、面板文字字号、卡片 HDR 亮度。
+struct PanelSettings: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        SettingsPane {
+            SettingsRow(label: String(localized: "Material:"),
+                        help: String(localized: "Liquid Glass needs macOS 26. With Reduce Transparency on, the panel always uses HUD Window.")) {
+                Picker("", selection: $settings.panelMaterial) {
+                    ForEach(PanelMaterial.allCases) { m in Text(m.title).tag(m) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+
+            SettingsRow(label: String(localized: "Tint:"),
+                        help: String(localized: "Colors the glass itself, so refraction and highlights stay. Only Liquid Glass Regular and Clear can be tinted; 0 turns it off.")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        // macOS 上 ColorPicker 打开系统原生色盘 (NSColorPanel)。透明度由下面的
+                        // 滑杆单独控制, 色盘里不显示透明度。
+                        ColorPicker("", selection: tintColorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                        Text(verbatim: "#" + settings.panelTintHex)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    labeledSlider(value: $settings.panelTintOpacity, range: 0...1, step: 0.1,
+                                  text: String(format: "%.1f", settings.panelTintOpacity))
+                }
+                .disabled(!settings.panelMaterial.supportsTint)
+            }
+
+            SettingsDivider()
+
+            SettingsRow(label: String(localized: "Text Size:"),
+                        help: String(localized: "Tabs, the shortcut legend and the page number on the panel. The panel grows a little for larger sizes.")) {
+                labeledSlider(value: $settings.panelFontSize, range: 10...15, step: 1,
+                              text: String(format: "%.0f pt", settings.panelFontSize))
+            }
+
+            SettingsRow(label: String(localized: "Card Brightness:"),
+                        help: String(localized: "Above 1.0, cards use the display's HDR range and get brighter than normal white, so they stand out from the glass. Needs macOS 26 and an HDR display; uses a little more power.")) {
+                labeledSlider(value: $settings.cardBrightness, range: 1...2, step: 0.1,
+                              text: String(format: "%.1f×", settings.cardBrightness))
+            }
+        }
+    }
+
+    private func labeledSlider(value: Binding<Double>, range: ClosedRange<Double>, step: Double, text: String) -> some View {
+        HStack(spacing: 10) {
+            Slider(value: value, in: range, step: step)
+                .frame(width: 220)
+            Text(verbatim: text)
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .leading)
+        }
+    }
+
+    /// 色盘返回的颜色转成 "RRGGBB" 存起来 (`Tokens.hex(from:)` 按 sRGB 取值)。
+    private var tintColorBinding: Binding<Color> {
+        Binding(
+            get: { Tokens.color(fromHex: settings.panelTintHex) },
+            set: { settings.panelTintHex = String(Tokens.hex(from: $0).dropFirst()) }
+        )
+    }
+}

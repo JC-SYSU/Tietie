@@ -27,6 +27,8 @@ struct ItemCardView: View {
     /// 编号的显示样式 (设置 → 卡片 → ⌘ 编号)。底部键帽样式的键帽画在面板底部,
     /// 卡片这边只负责淡出够不到的卡。
     var numberStyle: NumberHintStyle = .bandKeycap
+    /// 卡片底色的 HDR 亮度倍数 (设置 → 面板), 1 = 普通白。
+    var brightness: Double = 1
     /// Whether the "Show in History" context item applies (a search/filter is active, or the
     /// card is on a pinboard tab) — hidden in the plain History browse where it's a no-op.
     var canShowInHistory: Bool = false
@@ -134,7 +136,7 @@ struct ItemCardView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(cardBaseColor)
                 if isSelected {
                     RoundedRectangle(cornerRadius: Tokens.cardRadius, style: .continuous)
                         .fill(
@@ -296,6 +298,18 @@ struct ItemCardView: View {
         }
         .font(.system(size: 13))
         .frame(width: 16, height: 16)
+    }
+
+    /// 卡片底色。亮度倍数大于 1 时用 macOS 26 的 HDR 颜色 (`exposureAdjust`, 以 2 为底的
+    /// 曝光档数), 配合 `.allowedDynamicRange(.high)` 让底色比 SDR 白更亮, 面板玻璃不变,
+    /// 两者对比更明显。屏幕没有 HDR 余量时系统按 SDR 白显示。
+    private var cardBaseColor: Color {
+        let base = Color(nsColor: .controlBackgroundColor)
+        guard brightness > 1.001 else { return base }
+        if #available(macOS 26, *) {
+            return base.exposureAdjust(log2(brightness))
+        }
+        return base
     }
 
     /// ⌘ 编号舞台下卡片内容的不透明度。
@@ -1012,6 +1026,7 @@ extension ItemCardView: Equatable {
                 && lhs.isFlashing == rhs.isFlashing
                 && lhs.numberStage == rhs.numberStage
                 && lhs.numberStyle == rhs.numberStyle
+                && lhs.brightness == rhs.brightness
                 && lhs.canShowInHistory == rhs.canShowInHistory
                 && lhs.dragBadgeCount == rhs.dragBadgeCount
         }

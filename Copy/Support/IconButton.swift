@@ -9,7 +9,9 @@ struct IconButton: View {
     let systemName: String
     var fontSize: CGFloat = 12
     var size: CGSize = CGSize(width: 28, height: 26)
-    var tint: Color = .secondary
+    /// nil = 层级前景样式 `.secondary` (在玻璃上由系统做 vibrancy); 需要强调色等固定
+    /// 颜色时再传。
+    var tint: Color? = nil
     /// Tooltip shown on hover, and the accessibility label.
     let help: String
     let action: () -> Void
@@ -20,7 +22,7 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: fontSize, weight: .medium))
-                .foregroundStyle(tint)
+                .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
                 .frame(width: size.width, height: size.height)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)

@@ -43,6 +43,28 @@ enum CopySound: String, CaseIterable, Identifiable {
     }
 }
 
+/// 面板背景材质 (设置 → 面板)。前三种是 Liquid Glass (`Glass`, macOS 26+), 后三种是
+/// macOS 26 以前的 `NSVisualEffectView` 毛玻璃材质。系统开了「降低透明度」时一律用
+/// `.hudWindow` 实体材质, 不看这里。
+enum PanelMaterial: String, CaseIterable, Identifiable {
+    case glassRegular, glassClear, glassIdentity
+    case hudWindow, sidebar, windowBackground
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .glassRegular: return String(localized: "Liquid Glass – Regular")
+        case .glassClear: return String(localized: "Liquid Glass – Clear")
+        case .glassIdentity: return String(localized: "No Material")
+        case .hudWindow: return String(localized: "HUD Window")
+        case .sidebar: return String(localized: "Sidebar")
+        case .windowBackground: return String(localized: "Window Background")
+        }
+    }
+    /// 只有 Liquid Glass 的 regular / clear 能着色 (`Glass.tint`)。
+    var supportsTint: Bool { self == .glassRegular || self == .glassClear }
+}
+
 /// 按住 ⌘ 时卡片编号的显示样式 (设置 → 卡片)。
 enum NumberHintStyle: String, CaseIterable, Identifiable {
     /// 色带右侧的时间换成「⌘1」小键帽, 卡片内容不遮。
@@ -162,6 +184,11 @@ final class SettingsStore {
     static let candidateLimitKey = "candidateLimit"
     static let trailingNewlineScopeKey = "trailingNewlineScope"
     static let numberHintStyleKey = "numberHintStyle"
+    static let panelMaterialKey = "panelMaterial"
+    static let panelTintHexKey = "panelTintHex"
+    static let panelTintOpacityKey = "panelTintOpacity"
+    static let panelFontSizeKey = "panelFontSize"
+    static let cardBrightnessKey = "cardBrightness"
 
     var retention: RetentionPeriod {
         didSet {
@@ -334,6 +361,33 @@ final class SettingsStore {
     }
     @ObservationIgnored var onTrailingNewlineScopeChange: ((TrailingNewlineScope) -> Void)?
 
+    /// 面板背景材质。面板视图直接读, 改了立即生效。
+    var panelMaterial: PanelMaterial {
+        didSet { if panelMaterial != oldValue { defaults.set(panelMaterial.rawValue, forKey: Self.panelMaterialKey) } }
+    }
+    /// 玻璃着色颜色, "RRGGBB" (不带 #)。
+    var panelTintHex: String {
+        didSet { if panelTintHex != oldValue { defaults.set(panelTintHex, forKey: Self.panelTintHexKey) } }
+    }
+    /// 玻璃着色不透明度 0–1, 步进 0.1; 0 表示不着色。
+    var panelTintOpacity: Double {
+        didSet { if panelTintOpacity != oldValue { defaults.set(panelTintOpacity, forKey: Self.panelTintOpacityKey) } }
+    }
+    /// 面板上直接压在玻璃上的文字 (标签、快捷键图例、页码) 的字号, 10–15pt。
+    var panelFontSize: Double {
+        didSet {
+            guard panelFontSize != oldValue else { return }
+            defaults.set(panelFontSize, forKey: Self.panelFontSizeKey)
+            onPanelFontSizeChange?(panelFontSize)
+        }
+    }
+    @ObservationIgnored var onPanelFontSizeChange: ((Double) -> Void)?
+    /// 卡片底色的 HDR 亮度倍数, 1.0 = 普通白。大于 1 时用屏幕的 HDR 余量让卡片比
+    /// SDR 白更亮; 屏幕不支持 HDR 时看起来和 1.0 一样。
+    var cardBrightness: Double {
+        didSet { if cardBrightness != oldValue { defaults.set(cardBrightness, forKey: Self.cardBrightnessKey) } }
+    }
+
     /// 按住 ⌘ 时的编号样式。面板视图直接读 (SettingsStore 是 @Observable), 不需要回调。
     var numberHintStyle: NumberHintStyle {
         didSet {
@@ -368,6 +422,11 @@ final class SettingsStore {
         } else {
             retention = .unlimited
         }
+        panelMaterial = defaults.string(forKey: Self.panelMaterialKey).flatMap(PanelMaterial.init(rawValue:)) ?? .glassRegular
+        panelTintHex = defaults.string(forKey: Self.panelTintHexKey) ?? "FFFFFF"
+        panelTintOpacity = Self.clamp(defaults.object(forKey: Self.panelTintOpacityKey) as? Double ?? 0, 0, 1)
+        panelFontSize = Self.clamp(defaults.object(forKey: Self.panelFontSizeKey) as? Double ?? 11, 10, 15)
+        cardBrightness = Self.clamp(defaults.object(forKey: Self.cardBrightnessKey) as? Double ?? 1, 1, 2)
         numberHintStyle = defaults.string(forKey: Self.numberHintStyleKey)
             .flatMap(NumberHintStyle.init(rawValue:)) ?? .bandKeycap
         fetchLinkPreviews = false
@@ -415,6 +474,8 @@ final class SettingsStore {
         floatingShelf = false
         doubleClickToPaste = true
     }
+
+    private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
     func addExcludedApp(bundleID: String) {
         guard !excludedBundleIDs.contains(bundleID) else { return }

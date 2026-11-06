@@ -276,3 +276,20 @@
 "Keycaps Below Cards" = "底部键帽";
 "Large Numbers" = "大号数字";
 "How card numbers appear while you hold ⌘. Press ⌘ and a number to paste that card." = "按住 ⌘ 时卡片编号的样子。按 ⌘ 加数字直接粘贴那张卡。";
+
+/* Settings - panel */
+"Panel" = "面板";
+"Material:" = "材质：";
+"Tint:" = "着色：";
+"Text Size:" = "文字大小：";
+"Card Brightness:" = "卡片亮度：";
+"Liquid Glass – Regular" = "液态玻璃 · 常规";
+"Liquid Glass – Clear" = "液态玻璃 · 清透";
+"No Material" = "无材质";
+"HUD Window" = "HUD 窗口";
+"Sidebar" = "边栏";
+"Window Background" = "窗口背景";
+"Liquid Glass needs macOS 26. With Reduce Transparency on, the panel always uses HUD Window." = "液态玻璃需要 macOS 26。系统开了「降低透明度」时，面板一律使用 HUD 窗口材质。";
+"Colors the glass itself, so refraction and highlights stay. Only Liquid Glass Regular and Clear can be tinted; 0 turns it off." = "给玻璃材质本身上色，折射和高光保留。只有液态玻璃「常规」「清透」能着色；透明度 0 表示不着色。";
+"Tabs, the shortcut legend and the page number on the panel. The panel grows a little for larger sizes." = "面板上的标签、快捷键图例和页码。字号调大时面板会略微加高。";
+"Above 1.0, cards use the display's HDR range and get brighter than normal white, so they stand out from the glass. Needs macOS 26 and an HDR display; uses a little more power." = "大于 1.0 时，卡片使用屏幕的 HDR 亮度范围，比普通白色更亮，和玻璃面板拉开对比。需要 macOS 26 和支持 HDR 的屏幕，会稍微多耗电。";

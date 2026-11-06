@@ -62,11 +62,15 @@ struct ShelfRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 面板上直接压在玻璃上的文字 (标签、图例、页码) 的字号, 见 设置 → 面板。
+        .environment(\.panelFontSize, viewModel.settings.panelFontSize)
         // Hit-test floor for the whole panel: the glass surface below isn't scroll-
         // routeable, so without this a scroll starting on any dead pixel (header gaps,
         // legend strip, padding) fell through to the window behind the shelf.
         .background(Color.black.opacity(0.001).ignoresSafeArea())
-        .glassSurface(corners: GlassSurfaceCorners())
+        .glassSurface(corners: GlassSurfaceCorners(),
+                      material: viewModel.settings.panelMaterial,
+                      tint: panelTint)
         // 不加外阴影: 阴影画在面板窗口之外的部分会被窗口边界裁掉, 实际看不到 (2026-10
         // 试过四种做法都没有可见投影), 但它让整个面板每帧多一次离屏渲染。
         // Drags onto the pinboard tabs (cards to file, tabs to reorder) are taken by the
@@ -109,6 +113,13 @@ struct ShelfRootView: View {
         // bottom of the screen. This view is always on screen while the shelf is open, so
         // it reliably drives the host window's show/hide as the modal state changes.
         .onChange(of: hasActiveModal) { _, active in viewModel.onModalPresent?(active) }
+    }
+
+    /// 设置里的玻璃着色; 不透明度为 0 或材质不支持着色时为 nil。
+    private var panelTint: Color? {
+        let settings = viewModel.settings
+        guard settings.panelMaterial.supportsTint, settings.panelTintOpacity > 0 else { return nil }
+        return Tokens.color(fromHex: settings.panelTintHex).opacity(settings.panelTintOpacity)
     }
 
     private var hasActiveModal: Bool {
@@ -233,7 +244,7 @@ private struct PasteStackButton: View {
         HStack(spacing: 5) {
             IconButton(systemName: "square.stack.3d.up", fontSize: 15,
                        size: CGSize(width: 34, height: 30),
-                       tint: viewModel.isPasteStackOn ? Color.accentColor : .secondary,
+                       tint: viewModel.isPasteStackOn ? Color.accentColor : nil,
                        help: "Paste Stack (\(hotkey))") {
                 viewModel.onTogglePasteStack?()
             }
@@ -456,6 +467,7 @@ private struct TabPill: View {
     var shortcutHint: String? = nil
     let action: () -> Void
     @State private var isHovering = false
+    @Environment(\.panelFontSize) private var panelFontSize
 
     private var tintColor: Color? {
         tint.isEmpty ? nil : Tokens.color(fromHex: tint)
@@ -473,11 +485,14 @@ private struct TabPill: View {
         return 0.299 * r + 0.587 * g + 0.114 * b > 0.6
     }
 
-    private var labelColor: Color {
+    /// 选中的彩色 tag 是实底, 按底色选深字或白字; 其余情况文字直接压在玻璃上, 用层级
+    /// 前景样式 (.primary / .secondary), 由系统按玻璃背后的内容做 vibrancy 调整对比度。
+    /// 固定透明度的颜色 (如 primary.opacity(0.72)) 得不到这种处理。
+    private var labelColor: AnyShapeStyle {
         if isSelected, tintColor != nil {
-            return tintIsLight ? Color.black.opacity(0.82) : Color.white
+            return AnyShapeStyle(tintIsLight ? Color.black.opacity(0.82) : Color.white)
         }
-        return isSelected ? Color.primary : Color.primary.opacity(0.72)
+        return isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
     }
 
     var body: some View {
@@ -491,16 +506,14 @@ private struct TabPill: View {
             if let shortcutHint {
                 Text("⌘\(shortcutHint)")
                     .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 3)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.primary.opacity(0.1)))
+                    .background(Capsule().fill(.quaternary))
                     .accessibilityHidden(true)
             }
         }
-        .font(Tokens.caption)
-        // Unselected tabs sit a step below the selected one but stay well above
-        // `.secondary`, which drops too far on glass (see `GlassSurfaceModifier`).
+        .font(.system(size: panelFontSize - 1, weight: .medium))
         .foregroundStyle(labelColor)
         .padding(.horizontal, 8)
         .frame(height: 24)
@@ -617,6 +630,7 @@ private struct ShelfItemsRow: View {
                     isFlashing: viewModel.flashItemID == pair.item.uuid,
                     numberStage: numberStage(forIndex: pair.index),
                     numberStyle: viewModel.settings.numberHintStyle,
+                    brightness: viewModel.settings.cardBrightness,
                     canShowInHistory: !viewModel.searchQuery.isEmpty || currentPinboardID != nil,
                     onClick: { modifiers in viewModel.handleCardClick(pair.item, modifiers: modifiers) },
                     onHoverChanged: { hovering in
@@ -652,6 +666,8 @@ private struct ShelfItemsRow: View {
                 )
                 // 值没变的卡片跳过 body 重算 (比较规则见 ItemCardView 的 Equatable 扩展)。
                 .equatable()
+                // 允许卡片底色使用 HDR 亮度 (设置 → 面板 → 卡片亮度)。
+                .allowedDynamicRange(viewModel.settings.cardBrightness > 1.001 ? .high : .standard)
                 .id(pair.item.uuid)
                 .background(
                     GeometryReader { geo in
@@ -893,6 +909,7 @@ private struct ShelfEmptyState: View {
 private struct KeyboardLegend: View {
     let pageIndex: Int
     let pageCount: Int
+    @Environment(\.panelFontSize) private var panelFontSize
 
     var body: some View {
         HStack(spacing: 14) {
@@ -908,13 +925,13 @@ private struct KeyboardLegend: View {
         .padding(.bottom, 11)
     }
 
-    /// 翻页指示器: 替代原先的图例关闭按钮, 显示当前位置。
+    /// 翻页指示器: 替代原先的图例关闭按钮, 显示当前位置。字号跟随设置里的面板字号。
     private var pageIndicator: some View {
         HStack(spacing: 5) {
             Image(systemName: "rectangle.split.3x1")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: panelFontSize - 1, weight: .medium))
             Text(String(format: String(localized: "Page %d / %d"), pageIndex + 1, pageCount))
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: panelFontSize, weight: .medium))
                 .monospacedDigit()
         }
         .foregroundStyle(.secondary)

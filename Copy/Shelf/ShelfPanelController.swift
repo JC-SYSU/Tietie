@@ -252,8 +252,18 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         modalPanel?.appearance = theme.appearance
     }
 
+    /// 面板字号 (设置 → 面板) 比默认 11pt 大时, 标签行和图例行各自变高, 面板跟着加高,
+    /// 免得卡片被挤出底边。每 1pt 字号约多 2.4pt 行高 (两行合计)。
+    var panelFontSize: CGFloat = 11
+
     private var currentShelfHeight: CGFloat {
-        compactShelf ? Self.compactShelfHeight : Self.shelfHeight
+        let extra = max(0, panelFontSize - 11) * 2.4
+        return (compactShelf ? Self.compactShelfHeight : Self.shelfHeight) + extra.rounded(.up)
+    }
+
+    func setPanelFontSize(_ size: CGFloat) {
+        panelFontSize = size
+        resizeToMouseScreen()
     }
 
     /// Applied at panel creation and pushed live here when the setting changes

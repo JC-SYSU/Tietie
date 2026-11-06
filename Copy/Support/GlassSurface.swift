@@ -39,6 +39,12 @@ extension View {
     func glassSurface(corners: GlassSurfaceCorners) -> some View {
         modifier(GlassSurfaceModifier(corners: corners))
     }
+
+    /// 面板专用: 材质和着色由设置决定 (设置 → 面板)。其他表面 (弹层、编辑窗) 不走这里,
+    /// 保持 Liquid Glass regular。
+    func glassSurface(corners: GlassSurfaceCorners, material: PanelMaterial, tint: Color?) -> some View {
+        modifier(GlassSurfaceModifier(corners: corners, material: material, tint: tint))
+    }
 }
 
 /// Per-corner radii, mirroring `UnevenRoundedRectangle`'s leading/trailing-based
@@ -79,6 +85,9 @@ struct GlassSurfaceCorners: Equatable {
 
 private struct GlassSurfaceModifier: ViewModifier {
     let corners: GlassSurfaceCorners
+    var material: PanelMaterial = .glassRegular
+    /// 只对 Liquid Glass regular / clear 生效; nil 表示不着色。
+    var tint: Color? = nil
     @StateObject private var reduceTransparency = ReduceTransparencyObserver()
 
     /// 内阴影: 沿形状内缘压一圈, 让面板从底下的内容里"陷"出来。
@@ -86,10 +95,12 @@ private struct GlassSurfaceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if #available(macOS 26, *), !reduceTransparency.isReduced {
-                content.glassEffect(.regular, in: glassShape)
+            if reduceTransparency.isReduced {
+                content.background { VisualEffectMaterial(corners: corners, material: .hudWindow) }
+            } else if #available(macOS 26, *), let glass = liquidGlass {
+                content.glassEffect(glass, in: glassShape)
             } else {
-                content.background { VisualEffectMaterial(corners: corners) }
+                content.background { VisualEffectMaterial(corners: corners, material: fallbackMaterial) }
             }
         }
         // 内阴影: 描边模糊后裁回形状内缘, 得到柔和的向内暗边; 不参与命中测试。
@@ -101,6 +112,27 @@ private struct GlassSurfaceModifier: ViewModifier {
                 .blur(radius: 10)
                 .clipShape(glassShape)
                 .allowsHitTesting(false)
+        }
+    }
+
+    /// 所选材质对应的 Liquid Glass; 选的是 NSVisualEffectView 材质时为 nil。
+    @available(macOS 26, *)
+    private var liquidGlass: Glass? {
+        switch material {
+        case .glassRegular: return Glass.regular.tint(tint)
+        case .glassClear: return Glass.clear.tint(tint)
+        case .glassIdentity: return .identity
+        case .hudWindow, .sidebar, .windowBackground: return nil
+        }
+    }
+
+    /// NSVisualEffectView 材质: 选了这三种之一, 或系统低于 macOS 26 (此时 Liquid Glass
+    /// 选项退回 `.hudWindow`)。
+    private var fallbackMaterial: NSVisualEffectView.Material {
+        switch material {
+        case .sidebar: return .sidebar
+        case .windowBackground: return .windowBackground
+        default: return .hudWindow
         }
     }
 
@@ -152,10 +184,11 @@ private final class ReduceTransparencyObserver: ObservableObject {
 /// material, corner-masked exactly like the bespoke `ShelfBackground` this replaces.
 private struct VisualEffectMaterial: NSViewRepresentable {
     let corners: GlassSurfaceCorners
+    var material: NSVisualEffectView.Material = .hudWindow
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .hudWindow
+        view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
@@ -166,6 +199,7 @@ private struct VisualEffectMaterial: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
         nsView.layer?.cornerRadius = corners.fallbackRadius
         nsView.layer?.maskedCorners = corners.maskedCorners
     }

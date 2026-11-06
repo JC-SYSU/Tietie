@@ -501,6 +501,10 @@ final class AppCoordinator {
         settings.onFavoritesEnabledChange = { [weak self] _ in
             self?.shelfViewModel.favoritesSettingChanged()
         }
+        shelfController.panelFontSize = settings.panelFontSize
+        settings.onPanelFontSizeChange = { [weak self] size in
+            self?.shelfController.setPanelFontSize(size)
+        }
         settings.onCompactShelfChange = { [weak self] compact in
             self?.shelfController.setCompactShelf(compact)
         }
