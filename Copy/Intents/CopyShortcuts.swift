@@ -13,7 +13,8 @@ import CopyCore
 private func openItemStore() throws -> ItemStore {
     let database = try DatabaseManager.makeDefault()
     let blobs = BlobStore(directory: database.blobsDirectory)
-    return ItemStore(writer: database.writer, blobs: blobs)
+    return ItemStore(writer: database.writer, blobs: blobs,
+                     images: ImageFileStore(directory: database.imagesDirectory))
 }
 
 private func openPinboardStore() throws -> PinboardStore {

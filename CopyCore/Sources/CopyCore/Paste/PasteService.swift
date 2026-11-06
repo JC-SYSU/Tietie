@@ -12,10 +12,12 @@ extension NSPasteboard: PasteboardWriting {
     public func write(_ representations: [CapturedRepresentation], marker: String) {
         clearContents()
 
+        // 只有文件 (文件条目) 时按文件写, 系统会给每个文件补上文件名等类型。图片条目同时带
+        // 图片数据、文件 URL 和路径文本, 走下面的单个 item, 几种格式都保留。
         let urls = representations
             .filter { $0.uti == "public.file-url" }
             .compactMap { URL(dataRepresentation: $0.data, relativeTo: nil) }
-        if !urls.isEmpty {
+        if !urls.isEmpty, representations.allSatisfy({ $0.uti == "public.file-url" }) {
             writeObjects(urls as [NSURL])
             setData(Data(), forType: NSPasteboard.PasteboardType(marker))
             return

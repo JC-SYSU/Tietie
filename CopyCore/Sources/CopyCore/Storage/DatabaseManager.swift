@@ -4,17 +4,21 @@ import GRDB
 public final class DatabaseManager {
     public let writer: any DatabaseWriter
     public let blobsDirectory: URL
+    /// 图片文件目录 (见 `ImageFileStore`)。正式库在 `~/Library/Copy/Images/`, 演示库和
+    /// 测试库放在库目录下的 `images/`, 互不干扰。
+    public let imagesDirectory: URL
 
     public static func makeDefault() throws -> DatabaseManager {
         let appSupport = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Copy", isDirectory: true)
-        return try DatabaseManager(directory: appSupport)
+        return try DatabaseManager(directory: appSupport, imagesDirectory: ImageFileStore.defaultDirectory)
     }
 
-    public init(directory: URL) throws {
+    public init(directory: URL, imagesDirectory: URL? = nil) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         blobsDirectory = directory.appendingPathComponent("blobs", isDirectory: true)
+        self.imagesDirectory = imagesDirectory ?? directory.appendingPathComponent("images", isDirectory: true)
         try FileManager.default.createDirectory(at: blobsDirectory, withIntermediateDirectories: true)
         var configuration = Configuration()
         configuration.prepareDatabase { db in
@@ -149,6 +153,14 @@ public final class DatabaseManager {
                 """)
             try db.dropFTS5SynchronizationTriggers(forTable: "item_fts")
             try db.drop(table: "item_fts")
+        }
+        // v6: 图片存成真正的图片文件 (ImageFileStore), representation 记文件名。已有图片条目
+        // 的数据搬迁要读写文件、可能转码, 不在 SQL 迁移里做, 由 ItemStore.migrateImagesToFiles()
+        // 在 app 启动时完成 (幂等)。
+        migrator.registerMigration("v6") { db in
+            try db.alter(table: "representation") { t in
+                t.add(column: "fileName", .text)
+            }
         }
         return migrator
     }

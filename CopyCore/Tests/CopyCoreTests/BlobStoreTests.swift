@@ -22,10 +22,11 @@ final class BlobStoreTests: XCTestCase {
         let blobs = BlobStore(directory: dbm.blobsDirectory)
         let store = ItemStore(writer: dbm.writer, blobs: blobs)
 
+        // 大块的非图片数据 (这里是富文本) 进 blob; 图片走图片文件, 见 ImageFileStoreTests。
         let big = Data(repeating: 0xAB, count: 100_000)
         let captured = CapturedItem(
-            kind: .image, plainText: "Image", hashData: big,
-            representations: [CapturedRepresentation(uti: "public.png", data: big)],
+            kind: .richText, plainText: "Rich", hashData: big,
+            representations: [CapturedRepresentation(uti: "public.rtf", data: big)],
             sourceBundleID: nil, sourceAppName: nil)
         let saved = try store.save(captured)
 
@@ -33,7 +34,7 @@ final class BlobStoreTests: XCTestCase {
         XCTAssertEqual(blobFiles.count, 1)
 
         let reps = try store.representations(forItemID: saved.id!)
-        XCTAssertEqual(reps, [CapturedRepresentation(uti: "public.png", data: big)])
+        XCTAssertEqual(reps, [CapturedRepresentation(uti: "public.rtf", data: big)])
     }
 
     func testDeleteRemovesOrphanedBlob() throws {
@@ -44,8 +45,8 @@ final class BlobStoreTests: XCTestCase {
 
         let big = Data(repeating: 0xCD, count: 100_000)
         let captured = CapturedItem(
-            kind: .image, plainText: "Image", hashData: big,
-            representations: [CapturedRepresentation(uti: "public.png", data: big)],
+            kind: .richText, plainText: "Rich", hashData: big,
+            representations: [CapturedRepresentation(uti: "public.rtf", data: big)],
             sourceBundleID: nil, sourceAppName: nil)
         let saved = try store.save(captured)
         try store.delete(itemID: saved.id!)

@@ -81,6 +81,18 @@ final class AppCoordinator {
             host.onPinboardDrop = { [weak self] point, id in
                 self?.shelfViewModel.moveDroppedPinboard(id, at: point) ?? false
             }
+            // 卡片拖出: 正在改名的卡片不拖 (按住拖动是在选文字)。
+            host.cardAtPoint = { [weak self] point in
+                guard let viewModel = self?.shelfViewModel,
+                      let uuid = viewModel.cardSweep.cardUUID(at: point),
+                      viewModel.items.first(where: { $0.uuid == uuid })?.id != viewModel.inlineRenamingItemID
+                else { return nil }
+                return uuid
+            }
+            host.onBeginCardDrag = { [weak self, weak host] uuid, event in
+                guard let self, let host else { return }
+                self.beginCardDrag(uuid: uuid, event: event, from: host)
+            }
             return host
         }
         controller.onDidHide = { [weak self] in
@@ -432,7 +444,8 @@ final class AppCoordinator {
         self.isDemoMode = isDemo
         let database = try isDemo ? Self.makeDemoDatabase() : DatabaseManager.makeDefault()
         let blobs = BlobStore(directory: database.blobsDirectory)
-        let store = ItemStore(writer: database.writer, blobs: blobs)
+        let store = ItemStore(writer: database.writer, blobs: blobs,
+                              images: ImageFileStore(directory: database.imagesDirectory))
         self.store = store
         // 命中摘要用的折叠表 (约 100ms, debug 构建), 后台建好; 建好前摘要走旧做法。
         DispatchQueue.global(qos: .utility).async { SearchFoldTable.prepare() }
@@ -444,6 +457,16 @@ final class AppCoordinator {
                 if changed > 0 { NSLog("Copy: refreshed search text for \(changed) items") }
             } catch {
                 NSLog("Copy: search text refresh failed: \(error)")
+            }
+            // 图片条目搬成图片文件 (v6 之前存在 blob 里), 再清掉没人引用的图片文件。
+            // 都在持久化队列上, 与捕获写入串行; 平时没有要搬的, 只读一次库就返回。
+            do {
+                let migrated = try store.migrateImagesToFiles()
+                if migrated > 0 { NSLog("Copy: moved \(migrated) images to files") }
+                let swept = try store.sweepOrphanImageFiles()
+                if swept > 0 { NSLog("Copy: removed \(swept) unreferenced image files") }
+            } catch {
+                NSLog("Copy: image file maintenance failed: \(error)")
             }
         }
         let pinboardStore = PinboardStore(writer: database.writer)
@@ -676,6 +699,42 @@ final class AppCoordinator {
         (try? store.recentItems(limit: 10)) ?? []
     }
 
+    /// 卡片拖拽会话的来源 (只给「复制」, 会话结束时清掉拖拽状态)。
+    private lazy var cardDragSource: CardDragSource = {
+        let source = CardDragSource()
+        source.onEnded = { [weak self] in self?.shelfViewModel.shelfDragEnded() }
+        return source
+    }()
+
+    /// 从面板上开始拖卡片: 准备剪贴板内容, 渲染指针下的小标签, 开系统拖拽会话。
+    private func beginCardDrag(uuid: String, event: NSEvent, from host: NSView) {
+        let dragged = shelfViewModel.prepareCardDrag(uuid: uuid)
+        guard let first = dragged.first(where: { $0.uuid == uuid }) ?? dragged.first else { return }
+        let writers = shelfViewModel.dragPasteboardItems(for: dragged)
+        guard !writers.isEmpty else { return }
+        let image = dragChipImage(for: first, count: dragged.count, appearance: host.effectiveAppearance)
+        let point = host.convert(event.locationInWindow, from: nil)
+        let frame = NSRect(x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
+                           width: image.size.width, height: image.size.height)
+        let items = writers.enumerated().map { index, writer -> NSDraggingItem in
+            let item = NSDraggingItem(pasteboardWriter: writer)
+            // 只给第一个配图, 其余叠在下面 (多张图片时系统会显示数量)。
+            item.setDraggingFrame(frame, contents: index == 0 ? image : nil)
+            return item
+        }
+        let session = host.beginDraggingSession(with: items, event: event, source: cardDragSource)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+    }
+
+    private func dragChipImage(for item: ClipItem, count: Int, appearance: NSAppearance) -> NSImage {
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let renderer = ImageRenderer(content: CardDragChip(item: item, count: count)
+            .environment(\.colorScheme, isDark ? .dark : .light))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        return renderer.nsImage ?? NSImage(size: NSSize(width: 120, height: 30))
+    }
+
     /// Pastes the single most-recent history item directly into the frontmost app,
     /// without opening the shelf — the global "Quick Paste Latest" hotkey. Reuses
     /// `pasteFromShelf`'s place-reps + accessibility ⌘V path (with its "Press ⌘V"
@@ -689,14 +748,15 @@ final class AppCoordinator {
     }
 
     /// ⇧⌘V: 把历史里最新的一条以纯文本粘贴到当前 app (只写 UTF-8 纯文本, 不带 RTF/HTML)。
-    /// 只取最新那一条: 它没有文本 (图片) 时提示并停止, 不往回找更早的条目, 免得粘出意料之外的内容。
+    /// 最新一条是图片时粘贴它的图片文件完整路径。只取最新那一条: 没有任何文本可粘 (如
+    /// 图片文件丢了) 时提示并停止, 不往回找更早的条目, 免得粘出意料之外的内容。
     func pasteLatestPlainText() {
         guard let item = (try? store.recentItems(limit: 1))?.first else {
             HUD.show("Nothing to paste")
             return
         }
         guard let id = item.id,
-              let reps = try? store.representations(forItemID: id),
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
               reps.contains(where: { $0.uti == "public.utf8-plain-text" }) else {
             HUD.show(String(localized: "The latest item has no text"))
             return
@@ -781,7 +841,7 @@ final class AppCoordinator {
     @discardableResult
     func copyToClipboard(_ item: ClipItem) -> Bool {
         guard let id = item.id,
-              let reps = try? store.representations(forItemID: id),
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
               !reps.isEmpty else {
             HUD.show("Item unavailable")
             return false
@@ -936,7 +996,7 @@ final class AppCoordinator {
 
     func pasteFromShelf(_ item: ClipItem, plainTextOnly: Bool) {
         guard let id = item.id,
-              let reps = try? store.representations(forItemID: id),
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
               !reps.isEmpty else {
             HUD.show("Item unavailable")
             return

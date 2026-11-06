@@ -1189,7 +1189,7 @@ final class ShelfViewModel {
 
     /// Handles a card (or a whole multi-selection) dropped onto a pinboard tab.
     /// `uuids` is one uuid for a single-card drag, or the ordered selection's uuids
-    /// for a multi-selection drag (see `ShelfViewModel.multiDragProvider()`).
+    /// for a multi-selection drag (see `ShelfViewModel.prepareCardDrag(uuid:)`).
     /// Returns how many were added. Success is confirmed by the drop callout under the tab
     /// (see `showFiledCallout`), so only a failure shows the HUD.
     @discardableResult
@@ -1365,81 +1365,48 @@ final class ShelfViewModel {
         return oldIDs.filter(newSet.contains) == newIDs.filter(oldSet.contains)
     }
 
-    /// Builds the drag payload for a card: its native representations (so dragging out
-    /// to other apps still works) plus an internal uuid representation (so dropping on
-    /// a pinboard tab can resolve it back to a `ClipItem` via `item(forUUID:)`).
-    ///
-    /// When the dragged card is part of a multi-selection (more than one card
-    /// selected), the WHOLE ordered selection drags together instead of just this
-    /// card — see `multiDragProvider()`. Dragging a card that ISN'T in the current
-    /// selection (or when only one card is selected) keeps today's single-item
-    /// behavior unchanged.
-    func dragProvider(for item: ClipItem) -> NSItemProvider {
-        // Dragging a card that isn't selected selects it first, like Finder: the selection
-        // follows the drag, and the drag carries that card alone. Dragging a card inside a
-        // multi-selection still carries the whole selection.
-        if !selection.selected.contains(item.uuid) {
-            selection.click(item.uuid)
+    /// 开始拖一张卡片 (AppKit 拖拽会话, 见 ShelfHostingView)。拖的卡没选中就先选中它,
+    /// 和 Finder 一样; 拖的卡在多选里时整组一起拖。返回要拖的条目 (按卡片顺序)。
+    func prepareCardDrag(uuid: String) -> [ClipItem] {
+        guard let item = items.first(where: { $0.uuid == uuid }) else { return [] }
+        if !selection.selected.contains(uuid) {
+            selection.click(uuid)
         }
-        grabbedCardUUID = item.uuid
+        grabbedCardUUID = uuid
         Haptics.tap()
-        if selection.selected.count > 1 {
-            activeShelfDrag = .cards(orderedSelectedItems.map(\.uuid))
-            return multiDragProvider()
-        }
-        activeShelfDrag = .cards([item.uuid])
-        let provider = contentProvider(for: item)
-        let uuid = item.uuid
-        provider.registerDataRepresentation(forTypeIdentifier: UTType.copyItem.identifier, visibility: .all) { completion in
-            completion(Data(uuid.utf8), nil)
-            return nil
-        }
-        return provider
+        let dragged = selection.selected.count > 1 ? orderedSelectedItems : [item]
+        activeShelfDrag = .cards(dragged.map(\.uuid))
+        return dragged
     }
 
-    /// One `NSItemProvider` for the whole ordered selection. SwiftUI's `.onDrag(_:)`
-    /// returns exactly one `NSItemProvider` on macOS 14 — there's no multi-provider
-    /// drag session until later SDKs, and a true per-item multi-drag would mean
-    /// replacing this whole drag path (and the pinboard-filing drop it feeds) with an
-    /// AppKit `NSDraggingSession`/`NSDraggingSource` rework. The pragmatic,
-    /// macOS-14-safe answer: one provider whose text representation is every selected
-    /// item's plain text, newline-joined in visible order, so dropping it into any
-    /// text-accepting app (TextEdit, a browser field, Notes...) drops all selected
-    /// items together. It also carries every selected uuid (newline-joined) under the
-    /// internal `copyItem` type, so dropping the whole selection onto a pinboard tab
-    /// files all of them — see `ShelfHostingView` and `dropItems(uuids:toPinboard:)`.
-    private func multiDragProvider() -> NSItemProvider {
-        let selected = orderedSelectedItems
-        let joinedText = selected.map { $0.plainText ?? "" }.joined(separator: "\n")
-        let provider = NSItemProvider(object: joinedText as NSString)
-        let uuids = selected.map(\.uuid).joined(separator: "\n")
-        provider.registerDataRepresentation(forTypeIdentifier: UTType.copyItem.identifier, visibility: .all) { completion in
-            completion(Data(uuids.utf8), nil)
-            return nil
-        }
-        return provider
-    }
-
-    private func contentProvider(for item: ClipItem) -> NSItemProvider {
-        guard let id = item.id, let reps = try? store.representations(forItemID: id) else {
-            return NSItemProvider()
-        }
-        if let urlRep = reps.first(where: { $0.uti == "public.file-url" }),
-           let url = URL(dataRepresentation: urlRep.data, relativeTo: nil) {
-            return NSItemProvider(object: url as NSURL)
-        }
-        if item.kind == .image,
-           let rep = reps.first(where: { $0.uti == "public.png" }) ?? reps.first(where: { $0.uti == "public.tiff" }) {
-            let provider = NSItemProvider()
-            provider.registerDataRepresentation(forTypeIdentifier: rep.uti, visibility: .all) { completion in
-                completion(rep.data, nil)
-                return nil
+    /// 拖拽剪贴板的内容, 每个元素是一个剪贴板 item:
+    /// - 有图片文件的图片: 原文件的 URL + 完整路径文本 (和从 Finder 拖图片文件一样;
+    ///   文件选择窗口跳到那个目录并选中它, 终端、纯文本框得到路径)。多张图片各占一个 item。
+    /// - 链接: URL + 文本。
+    /// - 其他: 文本。多选时所有非图片条目合成一个 item, 文本按行拼接 (和以前一样)。
+    func dragPasteboardItems(for dragged: [ClipItem]) -> [NSPasteboardItem] {
+        var result: [NSPasteboardItem] = []
+        var texts: [String] = []
+        var linkURL: URL?
+        for item in dragged {
+            if item.kind == .image, let id = item.id, let url = try? store.imageFileURL(forItemID: id) {
+                let pb = NSPasteboardItem()
+                pb.setString(url.absoluteString, forType: .fileURL)
+                pb.setString(url.path, forType: .string)
+                result.append(pb)
+                continue
             }
-            return provider
+            if dragged.count == 1, item.kind == .link, let url = URL(string: item.plainText ?? "") {
+                linkURL = url
+            }
+            texts.append(item.plainText ?? "")
         }
-        if item.kind == .link, let url = URL(string: item.plainText ?? "") {
-            return NSItemProvider(object: url as NSURL)
+        if !texts.isEmpty {
+            let pb = NSPasteboardItem()
+            if let linkURL { pb.setString(linkURL.absoluteString, forType: .URL) }
+            pb.setString(texts.joined(separator: "\n"), forType: .string)
+            result.append(pb)
         }
-        return NSItemProvider(object: (item.plainText ?? "") as NSString)
+        return result
     }
 }

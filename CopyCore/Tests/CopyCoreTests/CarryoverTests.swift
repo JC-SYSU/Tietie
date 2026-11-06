@@ -2,9 +2,10 @@ import XCTest
 @testable import CopyCore
 
 final class CarryoverTests: XCTestCase {
+    /// 大块非图片数据 (富文本) 进 blob; 图片走图片文件, 见 ImageFileStoreTests。
     private func makeBlobItem(_ payload: UInt8, hashSeed: String) -> CapturedItem {
-        CapturedItem(kind: .image, plainText: "Image", hashData: Data(hashSeed.utf8),
-                     representations: [CapturedRepresentation(uti: "public.png",
+        CapturedItem(kind: .richText, plainText: "Rich", hashData: Data(hashSeed.utf8),
+                     representations: [CapturedRepresentation(uti: "public.rtf",
                                                               data: Data(repeating: payload, count: 100_000))],
                      sourceBundleID: nil, sourceAppName: nil)
     }

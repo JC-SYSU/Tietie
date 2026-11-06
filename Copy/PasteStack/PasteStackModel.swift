@@ -100,7 +100,7 @@ final class PasteStackModel {
     func advanceAndResolve() -> [CapturedRepresentation]? {
         while let uuid = queue.advance() {
             guard let id = (try? store.item(uuid: uuid))?.id,
-                  let reps = try? store.representations(forItemID: id),
+                  let reps = try? store.pasteboardRepresentations(forItemID: id),
                   !reps.isEmpty else {
                 continue
             }

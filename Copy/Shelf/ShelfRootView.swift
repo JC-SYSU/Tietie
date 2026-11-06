@@ -667,9 +667,7 @@ private struct ShelfItemsRow: View {
                     onOpen: { viewModel.open(pair.item) },
                     onShowInHistory: { viewModel.showInHistory(pair.item) },
                     onRotate: { viewModel.rotateImage(pair.item, clockwise: $0) },
-                    onDelete: { viewModel.delete(pair.item) },
-                    dragProvider: { viewModel.dragProvider(for: pair.item) },
-                    dragBadgeCount: viewModel.isSelected(pair.item) ? viewModel.selection.selected.count : 1
+                    onDelete: { viewModel.delete(pair.item) }
                 )
                 // 值没变的卡片跳过 body 重算 (比较规则见 ItemCardView 的 Equatable 扩展)。
                 .equatable()

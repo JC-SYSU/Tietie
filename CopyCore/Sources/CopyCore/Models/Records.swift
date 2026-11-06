@@ -32,6 +32,9 @@ public struct Representation: Codable, Equatable, FetchableRecord, MutablePersis
     public var uti: String
     public var inlineData: Data?
     public var blobKey: String?
+    /// 图片条目的图片文件名 (在 `ImageFileStore.directory` 下)。三者只有一个非空:
+    /// inlineData (小数据) / blobKey (大数据, 内容寻址) / fileName (图片)。
+    public var fileName: String? = nil
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID

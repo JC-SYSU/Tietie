@@ -98,6 +98,12 @@ final class CardSweep {
             .min(by: { abs($0.value.midX - x) < abs($1.value.midX - x) })?.key
     }
 
+    /// 面板坐标 (shelfRoot, 左上原点) 下的这一点落在哪张卡片上。
+    func cardUUID(at shelfPoint: CGPoint) -> String? {
+        let point = contentPoint(shelfPoint)
+        return cardFrames.first(where: { $0.value.contains(point) })?.key
+    }
+
     private func contentPoint(_ shelfPoint: CGPoint) -> CGPoint {
         CGPoint(x: shelfPoint.x - viewportFrame.minX - contentOrigin.x,
                 y: shelfPoint.y - viewportFrame.minY - contentOrigin.y)

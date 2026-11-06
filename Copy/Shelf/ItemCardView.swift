@@ -58,10 +58,6 @@ struct ItemCardView: View {
     let onShowInHistory: () -> Void
     let onRotate: (Bool) -> Void
     let onDelete: () -> Void
-    let dragProvider: () -> NSItemProvider
-    /// How many cards this drag carries. >1 when the card is part of a multi-selection,
-    /// so the compact drag preview can show a "+N" badge. Defaults to a single card.
-    var dragBadgeCount: Int = 1
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -253,51 +249,8 @@ struct ItemCardView: View {
             Button(String(localized: "Delete"), role: .destructive, action: onDelete)
                 .keyboardShortcut(.delete, modifiers: .command)
         }
-        .onDrag(dragProvider) { dragPreview }
+        // 拖出由 AppKit 拖拽会话处理 (见 ShelfHostingView), 拖动时的小标签见 CardDragChip。
         .modifier(CardClickGesture(onClick: onClick))
-    }
-
-    /// A small chip shown under the cursor while dragging, instead of SwiftUI's default
-    /// full-size snapshot of the card. The full card covered the little pinboard tabs,
-    /// making it impossible to tell which one you were about to drop onto; this keeps the
-    /// tabs (and their drop highlight) visible.
-    private var dragPreview: some View {
-        HStack(spacing: 6) {
-            dragPreviewGlyph
-            Text(item.displayTitle)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if dragBadgeCount > 1 {
-                Text("+\(dragBadgeCount - 1)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor))
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: 240)
-        .background(Capsule().fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 1))
-    }
-
-    @ViewBuilder private var dragPreviewGlyph: some View {
-        Group {
-            if item.kind == .image {
-                Image(systemName: "photo").foregroundStyle(.secondary)
-            } else if item.kind == .color {
-                Circle().fill(Tokens.color(fromHex: item.plainText ?? ""))
-            } else if let icon = AppIconCache.icon(forBundleID: item.appBundleID) {
-                Image(nsImage: icon).resizable()
-            } else {
-                Image(systemName: "doc.on.clipboard").foregroundStyle(.secondary)
-            }
-        }
-        .font(.system(size: 13))
-        .frame(width: 16, height: 16)
     }
 
     /// 卡片底色。亮度倍数大于 1 时用 macOS 26 的 HDR 颜色 (`exposureAdjust`, 以 2 为底的
@@ -1028,7 +981,54 @@ extension ItemCardView: Equatable {
                 && lhs.numberStyle == rhs.numberStyle
                 && lhs.brightness == rhs.brightness
                 && lhs.canShowInHistory == rhs.canShowInHistory
-                && lhs.dragBadgeCount == rhs.dragBadgeCount
         }
+    }
+}
+
+
+/// 拖动卡片时跟在指针下的小标签 (图标 + 标题 + 多选时的 "+N"), 代替整张卡片的快照:
+/// 整张卡会挡住收藏板标签, 看不出要放到哪一个上。由 AppCoordinator 渲染成拖拽图片。
+struct CardDragChip: View {
+    let item: ClipItem
+    var count: Int = 1
+
+    var body: some View {
+        HStack(spacing: 6) {
+            glyph
+            Text(item.displayTitle)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if count > 1 {
+                Text("+\(count - 1)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: 240)
+        .background(Capsule().fill(Color(nsColor: .windowBackgroundColor)))
+        .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 1))
+        .padding(2)
+    }
+
+    @ViewBuilder private var glyph: some View {
+        Group {
+            if item.kind == .image {
+                Image(systemName: "photo").foregroundStyle(.secondary)
+            } else if item.kind == .color {
+                Circle().fill(Tokens.color(fromHex: item.plainText ?? ""))
+            } else if let icon = AppIconCache.icon(forBundleID: item.appBundleID) {
+                Image(nsImage: icon).resizable()
+            } else {
+                Image(systemName: "doc.on.clipboard").foregroundStyle(.secondary)
+            }
+        }
+        .font(.system(size: 13))
+        .frame(width: 16, height: 16)
     }
 }

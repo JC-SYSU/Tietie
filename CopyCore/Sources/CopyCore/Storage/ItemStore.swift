@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import UniformTypeIdentifiers
 
 /// One row of `ItemStore.storageBreakdown()`: a kind, how many clearable items it has, and
 /// their total stored bytes.
@@ -23,11 +24,19 @@ public struct ItemStore {
 
     private let writer: any DatabaseWriter
     private let blobs: BlobStore
+    private let images: ImageFileStore
 
-    public init(writer: any DatabaseWriter, blobs: BlobStore) {
+    /// - Parameter images: 图片文件存放处。不传时放在 blobs 目录旁边的 `images/` (测试、
+    ///   演示库用); 正式库传 `DatabaseManager.imagesDirectory` (`~/Library/Copy/Images/`)。
+    public init(writer: any DatabaseWriter, blobs: BlobStore, images: ImageFileStore? = nil) {
         self.writer = writer
         self.blobs = blobs
+        self.images = images ?? ImageFileStore(
+            directory: blobs.directory.deletingLastPathComponent().appendingPathComponent("images", isDirectory: true))
     }
+
+    /// 图片文件所在目录。
+    public var imagesDirectory: URL { images.directory }
 
     @discardableResult
     public func save(_ captured: CapturedItem, now: Date = Date()) throws -> ClipItem {
@@ -45,14 +54,18 @@ public struct ItemStore {
                 // and the wipe below: a favicon is set out-of-band (`setFavicon`) after
                 // the item is first saved, so re-copying the same content and hitting
                 // this dedup branch must not erase it.
-                let oldKeys = try String.fetchAll(db, sql:
-                    "SELECT DISTINCT blobKey FROM representation WHERE itemId = ? AND blobKey IS NOT NULL AND uti != ?",
-                    arguments: [existing.id!, CopyPasteboard.faviconUTI])
+                let old = try storedFiles(itemIDs: [existing.id!], in: db, excludingUTI: CopyPasteboard.faviconUTI)
                 try Representation.filter(
                     Column("itemId") == existing.id! && Column("uti") != CopyPasteboard.faviconUTI
                 ).deleteAll(db)
-                try insertRepresentations(captured.representations, itemID: existing.id!, in: db)
-                try cleanOrphanBlobs(oldKeys, in: db)
+                // 图片文件名按条目的 createdAt 取, 重复复制得到同一个文件, 已交出去的路径不变。
+                let stored = try insertRepresentations(captured.representations, kind: captured.kind,
+                                                       createdAt: existing.createdAt, itemID: existing.id!, in: db)
+                if stored != existing.sizeBytes {
+                    existing.sizeBytes = stored
+                    try existing.update(db)
+                }
+                try cleanOrphans(old, in: db)
                 return existing
             }
             var item = ClipItem(
@@ -65,13 +78,34 @@ public struct ItemStore {
                 isFavorite: false
             )
             try item.insert(db)
-            try insertRepresentations(captured.representations, itemID: item.id!, in: db)
+            let stored = try insertRepresentations(captured.representations, kind: captured.kind,
+                                                   createdAt: now, itemID: item.id!, in: db)
+            if stored != item.sizeBytes {
+                item.sizeBytes = stored
+                try item.update(db)
+            }
             return item
         }
     }
 
-    private func insertRepresentations(_ reps: [CapturedRepresentation], itemID: Int64, in db: Database) throws {
-        for rep in reps {
+    /// 写入表示, 返回实际存下的字节数 (用作 `sizeBytes`)。
+    ///
+    /// 图片条目: 位图只存一份图片文件 (见 `ImageFileStore.primaryImage`), 其余位图丢弃;
+    /// 写文件失败 (如磁盘满) 时退回旧做法整组存入, 图片不丢。非位图表示和其他条目照旧。
+    @discardableResult
+    private func insertRepresentations(_ reps: [CapturedRepresentation], kind: ItemKind, createdAt: Date,
+                                       itemID: Int64, in db: Database) throws -> Int {
+        var toStore = reps
+        var total = 0
+        if kind == .image, let primary = ImageFileStore.primaryImage(from: reps),
+           let name = try? images.save(primary.data, ext: primary.ext, capturedAt: createdAt) {
+            var record = Representation(id: nil, itemId: itemID, uti: primary.uti, inlineData: nil, blobKey: nil,
+                                        fileName: name)
+            try record.insert(db)
+            total += primary.data.count
+            toStore = reps.filter { !ImageFileStore.isBitmap($0.uti) }
+        }
+        for rep in toStore {
             var record: Representation
             if rep.data.count > Self.inlineThreshold {
                 let key = try blobs.store(rep.data)
@@ -80,15 +114,64 @@ public struct ItemStore {
                 record = Representation(id: nil, itemId: itemID, uti: rep.uti, inlineData: rep.data, blobKey: nil)
             }
             try record.insert(db)
+            total += rep.data.count
         }
+        return total
     }
 
-    private func cleanOrphanBlobs(_ keys: [String], in db: Database) throws {
-        for key in keys {
+    /// 一批条目的表示引用的 blob 键和图片文件名, 删表示前取出, 删完交给 `cleanOrphans`。
+    private struct StoredFiles {
+        var blobKeys: [String] = []
+        var fileNames: [String] = []
+    }
+
+    private func storedFiles(itemIDs: [Int64], in db: Database, excludingUTI: String? = nil) throws -> StoredFiles {
+        var result = StoredFiles()
+        for chunk in chunked(itemIDs, into: Self.deleteChunkSize) {
+            let placeholders = chunk.map { _ in "?" }.joined(separator: ",")
+            var arguments = StatementArguments(chunk)
+            var extra = ""
+            if let excludingUTI {
+                extra = " AND uti != ?"
+                arguments += [excludingUTI]
+            }
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT blobKey, fileName FROM representation
+                WHERE itemId IN (\(placeholders))\(extra)
+                """, arguments: arguments)
+            for row in rows {
+                if let key: String = row["blobKey"] { result.blobKeys.append(key) }
+                if let name: String = row["fileName"] { result.fileNames.append(name) }
+            }
+        }
+        return result
+    }
+
+    /// 删掉不再被任何表示引用的 blob 和图片文件。
+    private func cleanOrphans(_ files: StoredFiles, in db: Database) throws {
+        for key in Set(files.blobKeys) {
             let stillUsed = try Int.fetchOne(db, sql:
                 "SELECT COUNT(*) FROM representation WHERE blobKey = ?", arguments: [key]) ?? 0
             if stillUsed == 0 { blobs.delete(key: key) }
         }
+        for name in Set(files.fileNames) {
+            let stillUsed = try Int.fetchOne(db, sql:
+                "SELECT COUNT(*) FROM representation WHERE fileName = ?", arguments: [name]) ?? 0
+            if stillUsed == 0 { images.delete(name) }
+        }
+    }
+
+    private func resolve(_ rep: Representation) -> CapturedRepresentation? {
+        if let data = rep.inlineData {
+            return CapturedRepresentation(uti: rep.uti, data: data)
+        }
+        if let name = rep.fileName, let data = images.data(for: name) {
+            return CapturedRepresentation(uti: rep.uti, data: data)
+        }
+        if let key = rep.blobKey, let data = blobs.data(forKey: key) {
+            return CapturedRepresentation(uti: rep.uti, data: data)
+        }
+        return nil
     }
 
     public func recentItems(kinds: Set<ItemKind>? = nil, limit: Int = 50) throws -> [ClipItem] {
@@ -115,15 +198,30 @@ public struct ItemStore {
         let records = try writer.read { db in
             try Representation.filter(Column("itemId") == id).fetchAll(db)
         }
-        return records.compactMap { rep in
-            if let data = rep.inlineData {
-                return CapturedRepresentation(uti: rep.uti, data: data)
-            }
-            if let key = rep.blobKey, let data = blobs.data(forKey: key) {
-                return CapturedRepresentation(uti: rep.uti, data: data)
-            }
-            return nil
+        return records.compactMap(resolve)
+    }
+
+    /// 图片条目的图片文件 (文件在磁盘上才返回)。
+    public func imageFileURL(forItemID id: Int64) throws -> URL? {
+        let name = try writer.read { db in
+            try String.fetchOne(db, sql:
+                "SELECT fileName FROM representation WHERE itemId = ? AND fileName IS NOT NULL LIMIT 1",
+                arguments: [id])
         }
+        guard let name, images.exists(name) else { return nil }
+        return images.url(for: name)
+    }
+
+    /// 粘贴用的表示。图片条目在图片数据后面再带上图片文件的 URL 和完整路径文本: 接收方
+    /// 各取所需 —— 认图片的 (聊天、富文本) 取图片, 认文件的 (文件选择窗口、上传区、
+    /// Finder) 取文件, 只认文字的 (终端、纯文本框) 取路径。图片排最前。
+    public func pasteboardRepresentations(forItemID id: Int64) throws -> [CapturedRepresentation] {
+        var reps = try representations(forItemID: id)
+        if let url = try imageFileURL(forItemID: id) {
+            reps.append(CapturedRepresentation(uti: UTType.fileURL.identifier, data: url.dataRepresentation))
+            reps.append(CapturedRepresentation(uti: UTType.utf8PlainText.identifier, data: Data(url.path.utf8)))
+        }
+        return reps
     }
 
     /// A self-contained archive snapshot of one item (every field plus its representation
@@ -379,21 +477,13 @@ public struct ItemStore {
         let ids = try request.selectPrimaryKey(as: Int64.self).fetchAll(db)
         guard !ids.isEmpty else { return }
 
-        var allKeys: [String] = []
-        for chunk in chunked(ids, into: Self.deleteChunkSize) {
-            let placeholders = chunk.map { _ in "?" }.joined(separator: ",")
-            let keys = try String.fetchAll(db, sql: """
-                SELECT DISTINCT blobKey FROM representation
-                WHERE itemId IN (\(placeholders)) AND blobKey IS NOT NULL
-                """, arguments: StatementArguments(chunk))
-            allKeys.append(contentsOf: keys)
-        }
+        let files = try storedFiles(itemIDs: ids, in: db)
 
         for chunk in chunked(ids, into: Self.deleteChunkSize) {
             try ClipItem.filter(chunk.contains(Column("id"))).deleteAll(db)
         }
 
-        try cleanOrphanBlobs(allKeys, in: db)
+        try cleanOrphans(files, in: db)
     }
 
     private func chunked<T>(_ array: [T], into size: Int) -> [[T]] {
@@ -542,9 +632,7 @@ public struct ItemStore {
                 try deleteItems(ClipItem.filter(Column("id") == itemID), in: db)
                 return winner
             }
-            let oldKeys = try String.fetchAll(db, sql:
-                "SELECT DISTINCT blobKey FROM representation WHERE itemId = ? AND blobKey IS NOT NULL",
-                arguments: [itemID])
+            let old = try storedFiles(itemIDs: [itemID], in: db)
             try Representation.filter(Column("itemId") == itemID).deleteAll(db)
             item.kind = .image
             item.contentHash = hash
@@ -552,8 +640,10 @@ public struct ItemStore {
             item.recognizedText = nil
             item.lastUsedAt = now
             try item.update(db)
-            try insertRepresentations([CapturedRepresentation(uti: uti, data: data)], itemID: itemID, in: db)
-            try cleanOrphanBlobs(oldKeys, in: db)
+            // 旋转等改动后内容哈希变了, 文件名随之换新, 旧文件在下面清掉。
+            try insertRepresentations([CapturedRepresentation(uti: uti, data: data)], kind: .image,
+                                      createdAt: item.createdAt, itemID: itemID, in: db)
+            try cleanOrphans(old, in: db)
             return item
         }
     }
@@ -573,9 +663,7 @@ public struct ItemStore {
                 try deleteItems(ClipItem.filter(Column("id") == itemID), in: db)
                 return winner
             }
-            let oldKeys = try String.fetchAll(db, sql:
-                "SELECT DISTINCT blobKey FROM representation WHERE itemId = ? AND blobKey IS NOT NULL",
-                arguments: [itemID])
+            let old = try storedFiles(itemIDs: [itemID], in: db)
             try Representation.filter(Column("itemId") == itemID).deleteAll(db)
             item.kind = ItemKind.forText(text)
             item.plainText = text
@@ -586,8 +674,8 @@ public struct ItemStore {
             try item.update(db)
             try insertRepresentations(
                 [CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(text.utf8))],
-                itemID: itemID, in: db)
-            try cleanOrphanBlobs(oldKeys, in: db)
+                kind: item.kind, createdAt: item.createdAt, itemID: itemID, in: db)
+            try cleanOrphans(old, in: db)
             return item
         }
     }
@@ -614,9 +702,7 @@ public struct ItemStore {
                 try deleteItems(ClipItem.filter(Column("id") == itemID), in: db)
                 return winner
             }
-            let oldKeys = try String.fetchAll(db, sql:
-                "SELECT DISTINCT blobKey FROM representation WHERE itemId = ? AND blobKey IS NOT NULL",
-                arguments: [itemID])
+            let old = try storedFiles(itemIDs: [itemID], in: db)
             try Representation.filter(Column("itemId") == itemID).deleteAll(db)
             item.kind = ItemKind.forText(plainText)
             item.plainText = plainText
@@ -628,8 +714,8 @@ public struct ItemStore {
             try insertRepresentations(
                 [CapturedRepresentation(uti: "public.rtf", data: rtfData),
                  CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(plainText.utf8))],
-                itemID: itemID, in: db)
-            try cleanOrphanBlobs(oldKeys, in: db)
+                kind: item.kind, createdAt: item.createdAt, itemID: itemID, in: db)
+            try cleanOrphans(old, in: db)
             return item
         }
     }
@@ -723,7 +809,7 @@ public struct ItemStore {
             try item.insert(db)
             try insertRepresentations(
                 [CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(text.utf8))],
-                itemID: item.id!, in: db)
+                kind: item.kind, createdAt: now, itemID: item.id!, in: db)
             return item
         }
     }
@@ -741,13 +827,14 @@ public struct ItemStore {
                 Column("itemId") == itemID && Column("uti") == CopyPasteboard.faviconUTI
             ).deleteAll(db)
 
-            // Insert the new favicon representation via insertRepresentations
+            // Insert the new favicon representation via insertRepresentations. 网站图标只挂在
+            // 链接条目上, 按非图片条目处理 (照旧进 inline/blob, 不写图片文件)。
             try insertRepresentations(
                 [CapturedRepresentation(uti: CopyPasteboard.faviconUTI, data: pngData)],
-                itemID: itemID, in: db)
+                kind: .link, createdAt: Date(), itemID: itemID, in: db)
 
             // Clean up any orphaned blobs
-            try cleanOrphanBlobs(oldKeys, in: db)
+            try cleanOrphans(StoredFiles(blobKeys: oldKeys), in: db)
         }
     }
 
@@ -793,6 +880,56 @@ public struct ItemStore {
         }
     }
 
+    /// 把还没有图片文件的图片条目 (v6 之前存进 blob 的 PNG/TIFF) 搬成图片文件。幂等:
+    /// 搬过的条目有 fileName 表示, 不再处理。每个条目一个事务, 中途退出下次启动接着搬。
+    /// 内容哈希 (去重键) 不变, `sizeBytes` 改成实际存下的大小。返回搬迁的条目数。
+    @discardableResult
+    public func migrateImagesToFiles() throws -> Int {
+        let ids = try writer.read { db in
+            try Int64.fetchAll(db, sql: """
+                SELECT id FROM item WHERE kind = 'image'
+                AND id NOT IN (SELECT itemId FROM representation WHERE fileName IS NOT NULL)
+                """)
+        }
+        var migrated = 0
+        for id in ids {
+            let done: Bool = try writer.write { db in
+                guard var item = try ClipItem.fetchOne(db, key: id) else { return false }
+                let records = try Representation.filter(Column("itemId") == id).fetchAll(db)
+                let reps = records.compactMap(resolve)
+                guard ImageFileStore.primaryImage(from: reps) != nil else { return false }
+                let old = try storedFiles(itemIDs: [id], in: db)
+                try Representation.filter(Column("itemId") == id).deleteAll(db)
+                let stored = try insertRepresentations(reps, kind: .image, createdAt: item.createdAt,
+                                                       itemID: id, in: db)
+                if stored != item.sizeBytes {
+                    item.sizeBytes = stored
+                    try item.update(db)
+                }
+                try cleanOrphans(old, in: db)
+                return true
+            }
+            if done { migrated += 1 }
+        }
+        return migrated
+    }
+
+    /// 删掉图片目录里没有任何表示引用的文件 (写文件后事务失败、或手动放进来的残留)。
+    /// 在 app 的持久化队列上调用, 与捕获写入串行。返回删除的文件数。
+    @discardableResult
+    public func sweepOrphanImageFiles() throws -> Int {
+        let referenced = Set(try writer.read { db in
+            try String.fetchAll(db, sql: "SELECT DISTINCT fileName FROM representation WHERE fileName IS NOT NULL")
+        })
+        var removed = 0
+        for name in images.allFileNames() where !referenced.contains(name) {
+            images.delete(name)
+            removed += 1
+        }
+        return removed
+    }
+
+
     /// Inserts an item reconstructed from an exported archive (`ArchiveIO`), preserving
     /// its original timestamps, title, favorite flag, and recognized text so a restored
     /// history is indistinguishable from the original. Dedups by content hash like
@@ -824,7 +961,12 @@ public struct ItemStore {
                 recognizedText: archived.recognizedText
             )
             try item.insert(db)
-            try insertRepresentations(reps, itemID: item.id!, in: db)
+            let stored = try insertRepresentations(reps, kind: kind, createdAt: archived.createdAt,
+                                                   itemID: item.id!, in: db)
+            if stored != item.sizeBytes {
+                item.sizeBytes = stored
+                try item.update(db)
+            }
             return true
         }
     }

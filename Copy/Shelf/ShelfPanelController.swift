@@ -86,6 +86,54 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
         super.hitTest(point) ?? self
     }
 
+    // MARK: 卡片拖出 (AppKit 拖拽会话)
+    //
+    // 卡片不用 SwiftUI 的 .onDrag: 它会把文件 URL 复制到 ~/Library/Caches/com.apple.SwiftUI.Drag-…
+    // 再交出副本 (文件选择窗口会跳到缓存目录, Finder 也接不住), 把自定义数据包成「文件承诺」
+    // (拖到 Finder 得到一个 36 字节的垃圾文件)。这里自己开系统拖拽会话, 剪贴板内容完全由
+    // `onBeginCardDrag` 决定。按在卡片上之后的 mouseDragged 不交给 SwiftUI, 卡片上本来也没有
+    // 别的拖动手势 (框选从卡片上起手会被拒绝); 点击 (mouseDown/mouseUp) 照常交给 SwiftUI。
+
+    /// 面板坐标 (左上原点) 下这一点的卡片 uuid; 不在卡片上或该卡片正在改名时为 nil。
+    var cardAtPoint: ((CGPoint) -> String?)?
+    /// 开始拖这张卡片: 由 AppCoordinator 准备内容并调用 beginDraggingSession。
+    var onBeginCardDrag: ((String, NSEvent) -> Void)?
+
+    private var pendingCardDrag: (uuid: String, start: NSPoint)?
+    /// 移动多远开始拖 (pt)。
+    private static let cardDragThreshold: CGFloat = 3
+
+    override func mouseDown(with event: NSEvent) {
+        pendingCardDrag = nil
+        if event.modifierFlags.contains(.control) == false,
+           let uuid = cardAtPoint?(topLeftPoint(event)) {
+            pendingCardDrag = (uuid, event.locationInWindow)
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let pending = pendingCardDrag else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let dx = event.locationInWindow.x - pending.start.x
+        let dy = event.locationInWindow.y - pending.start.y
+        guard dx * dx + dy * dy >= Self.cardDragThreshold * Self.cardDragThreshold else { return }
+        pendingCardDrag = nil
+        onBeginCardDrag?(pending.uuid, event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pendingCardDrag = nil
+        super.mouseUp(with: event)
+    }
+
+    private func topLeftPoint(_ event: NSEvent) -> CGPoint {
+        let point = convert(event.locationInWindow, from: nil)
+        return isFlipped ? point : CGPoint(x: point.x, y: bounds.height - point.y)
+    }
+
     // MARK: 触控板翻页 spike——验证 swipe-tracking 接口在本面板的激活与数据形状
 
     override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
@@ -103,7 +151,11 @@ final class ShelfHostingView: NSHostingView<ShelfRootView> {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        registerForDraggedTypes([Self.cardType, Self.pinboardType])
+        // 卡片的内部 uuid 类型只对本进程可见, 可能不出现在拖拽剪贴板上; 再登记卡片对外
+        // 交出的常见类型, 保证本 app 拖出的卡片经过面板时 AppKit 会交给这里。别的 app 拖进来
+        // 的同类内容由 dragKind 拒收 (它们没有 draggingSource)。
+        registerForDraggedTypes([Self.cardType, Self.pinboardType,
+                                 .fileURL, .URL, .string, .png, .tiff, .rtf, .html])
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -698,3 +750,19 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     }
 }
 
+
+
+/// 卡片拖拽会话的来源。拖到别的 app 只给「复制」(Finder 不会把库里的图片文件移走);
+/// 面板内 (拖到收藏板标签) 照旧。会话结束时通知 (放下或取消都算)。
+final class CardDragSource: NSObject, NSDraggingSource {
+    var onEnded: (() -> Void)?
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : [.copy, .move, .generic]
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        onEnded?()
+    }
+}
