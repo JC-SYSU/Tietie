@@ -311,7 +311,9 @@ final class ShelfViewModel {
         if filter.hasText {
             // Text search is one-shot; re-runs whenever the query changes.
             isPaged = true
-            apply((try? store.search(filter: filter, limit: settings.candidateLimit, favoritesFirst: settings.favoritesEnabled)) ?? [])
+            // 边打字边刷新结果, 不做动画。
+            apply((try? store.search(filter: filter, limit: settings.candidateLimit, favoritesFirst: settings.favoritesEnabled)) ?? [],
+                  animated: false)
         } else if searchQuery.tokens.isEmpty, case .pinboard(let id) = tab {
             // Plain pinboard browse: keep the dedicated observation (preserves manual order).
             isPaged = false
@@ -435,6 +437,7 @@ final class ShelfViewModel {
     /// Show-time reset: 回到第 0 页, 选中与锚定都落在最新一张。
     func prepareForShow() {
         pageIndex = 0
+        openEntranceToken &+= 1
         cardSweep.scrollToStart()
         if let first = items.first { selection.click(first.uuid) } else { selection.reset() }
     }
@@ -555,11 +558,23 @@ final class ShelfViewModel {
         let target = index / max(1, layoutCapacity)
         guard target != pageIndex else { return }
         lastFlipDirection = target > pageIndex ? 1 : -1
+        lastFlipAt = Date()
         withAnimation(Self.pageFlipAnimation) { pageIndex = target }
     }
 
-    /// 翻页动画, 所有换页入口共用。减弱动态效果时视图那边换成纯淡入淡出 (见 ShelfItemsRow)。
-    static let pageFlipAnimation: Animation = .easeOut(duration: 0.25)
+    /// 翻页时整页容器的淡入淡出, 所有换页入口共用。卡片自己的落位弹簧在 CardEntrance。
+    static let pageFlipAnimation: Animation = .easeOut(duration: 0.18)
+
+    /// 最近一次翻页的时间。新页的卡片在出现时看这个时间, 刚翻过页才从侧面滑入; 其他
+    /// 原因出现的卡片 (数据刷新、搜索) 不滑。
+    @ObservationIgnored private(set) var lastFlipAt: Date = .distantPast
+    /// 每次打开面板加一; 卡片看到它变化就从下方弹上来 (Motion.cardCascadeOnOpen)。
+    private(set) var openEntranceToken = 0
+
+    /// 刚翻过页 (0.15s 内) 时新出现的卡片应从哪一侧滑入: +1 从右, -1 从左; 否则 0。
+    var pendingFlipEntrance: Int {
+        Date().timeIntervalSince(lastFlipAt) < 0.15 ? lastFlipDirection : 0
+    }
 
     // MARK: 翻页滚动
 
@@ -612,6 +627,7 @@ final class ShelfViewModel {
         let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: capacity)
         guard direction != 0, maxPage > 0 else { return }
         lastFlipDirection = direction
+        lastFlipAt = Date()
         withAnimation(Self.pageFlipAnimation) {
             pageIndex = min(max(pageIndex + direction, 0), maxPage)
         }
@@ -1300,13 +1316,25 @@ final class ShelfViewModel {
         }
     }
 
-    private func apply(_ new: [ClipItem]) {
+    /// - Parameter animated: 搜索、切换标签这类整批替换传 false; 实时观察的刷新传 true,
+    ///   这时只有「少量增删、其余顺序不变」的变化才做动画 (删卡片、新复制进来的条目)。
+    private func apply(_ new: [ClipItem], animated: Bool = true) {
         // Favorites float to the front (preserving recency within each group); the shelf
         // draws a divider at the boundary (`favoritesCount`).
         let favorites = new.filter(\.isFavorite)
         let rest = new.filter { !$0.isFavorite }
-        items = settings.favoritesEnabled ? favorites + rest : new
-        favoritesCount = settings.favoritesEnabled ? favorites.count : 0
+        let newItems = settings.favoritesEnabled ? favorites + rest : new
+        let newFavoritesCount = settings.favoritesEnabled ? favorites.count : 0
+        if animated, !Motion.reduced, Self.isSmallEdit(from: items, to: newItems) {
+            // 被删的卡缩小淡出、后面的卡补位、新卡从左侧弹出 (过渡定义在 ShelfItemsRow)。
+            withAnimation(Motion.spring) {
+                items = newItems
+                favoritesCount = newFavoritesCount
+            }
+        } else {
+            items = newItems
+            favoritesCount = newFavoritesCount
+        }
         // 条目变化可能让当前页越界; 容量本身由布局负责, 这里只收敛页码。
         let maxPage = PageCapacity.maxPageIndex(itemCount: items.count, capacity: layoutCapacity)
         if pageIndex > maxPage { pageIndex = maxPage }
@@ -1324,6 +1352,17 @@ final class ShelfViewModel {
         }
         if selection.selected.isEmpty, let first = items.first { selection.click(first.uuid) }
         JumpProbe.log("apply n=\(new.count) primary=\(selection.primary ?? "nil") primaryChanged=\(selection.primary != primaryBefore ? "Y" : "N")")
+    }
+
+    /// 从 old 到 new 是不是「增删不超过 3 条、留下来的条目相对顺序不变、两边都不为空」。
+    /// 搜索换结果、切标签、清空历史都不满足, 不会被当成一次增删去做动画。
+    static func isSmallEdit(from old: [ClipItem], to new: [ClipItem]) -> Bool {
+        guard !old.isEmpty, !new.isEmpty, old.map(\.uuid) != new.map(\.uuid) else { return false }
+        let oldIDs = old.map(\.uuid), newIDs = new.map(\.uuid)
+        let oldSet = Set(oldIDs), newSet = Set(newIDs)
+        let removed = oldSet.subtracting(newSet).count, inserted = newSet.subtracting(oldSet).count
+        guard removed + inserted <= 3 else { return false }
+        return oldIDs.filter(newSet.contains) == newIDs.filter(oldSet.contains)
     }
 
     /// Builds the drag payload for a card: its native representations (so dragging out

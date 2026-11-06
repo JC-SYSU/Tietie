@@ -191,7 +191,7 @@ struct ItemCardView: View {
             if reduceMotion {
                 isHovering = hovering
             } else {
-                withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
+                withAnimation(Motion.quick) { isHovering = hovering }
             }
             onHoverChanged(hovering)
         }

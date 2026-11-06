@@ -255,7 +255,7 @@ private struct PasteStackButton: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: viewModel.optionHeld)
+        .animation(Motion.quick, value: viewModel.optionHeld)
     }
 }
 
@@ -613,8 +613,10 @@ private struct ShelfItemsRow: View {
     private func pageContent(capacity: Int) -> some View {
         // 一页卡片共用一次批量查询 (见 ShelfViewModel.pinboardTints)。
         let tints = viewModel.pinboardTints()
+        let page = pageItems(capacity: capacity)
+        let flipEntrance = reduceMotion ? 0 : viewModel.pendingFlipEntrance
         return HStack(spacing: Tokens.cardGap(compact: compact)) {
-            ForEach(pageItems(capacity: capacity), id: \.item.uuid) { pair in
+            ForEach(Array(page.enumerated()), id: \.element.item.uuid) { slot, pair in
                 // A divider between the leading favorites and the rest.
                 if pair.index == viewModel.favoritesCount,
                    viewModel.favoritesCount > 0,
@@ -673,6 +675,23 @@ private struct ShelfItemsRow: View {
                 .equatable()
                 // 允许卡片底色使用 HDR 亮度 (设置 → 面板 → 卡片亮度)。
                 .allowedDynamicRange(viewModel.settings.cardBrightness > 1.001 ? .high : .standard)
+                // 选中的卡片轻微放大 (Motion.liftSelectedCard)。只是视觉缩放, 不改布局。
+                .scaleEffect(Motion.liftSelectedCard && !reduceMotion && viewModel.isSelected(pair.item)
+                             ? Motion.selectedCardScale : 1)
+                .animation(reduceMotion ? nil : Motion.spring, value: viewModel.isSelected(pair.item))
+                // 打开面板时从下方弹上来、翻页时从侧面滑入 (见 CardEntrance)。
+                .modifier(CardEntrance(
+                    openToken: viewModel.openEntranceToken,
+                    flipDirection: flipEntrance,
+                    order: flipEntrance < 0 ? page.count - 1 - slot : slot,
+                    enabled: !reduceMotion))
+                // 删除: 缩小淡出; 新复制进来: 从左侧放大弹出。只在 apply 判定为少量增删、
+                // 用 Motion.spring 包住变化时才会播放 (搜索刷新不播)。
+                .transition(reduceMotion ? .opacity : .asymmetric(
+                    insertion: .scale(scale: 0.92, anchor: .leading).combined(with: .opacity)
+                        .animation(Motion.pop),
+                    removal: .scale(scale: 0.9).combined(with: .opacity)
+                        .animation(.easeIn(duration: 0.15))))
                 .id(pair.item.uuid)
                 .background(
                     GeometryReader { geo in
@@ -707,15 +726,18 @@ private struct ShelfItemsRow: View {
         .onPreferenceChange(CardFramesKey.self) { viewModel.cardSweep.cardFramesChanged($0) }
         // 整页替换的滑动过渡: 方向跟随最近一次翻页。
         .id(viewModel.pageIndex)
+        // 翻页: 新页整体淡入, 每张卡自己从翻页方向那侧 60pt 外弹回 (CardEntrance);
+        // 旧页向反方向移开 60pt 并淡出。以前整页移动一个面板宽 (~1800pt), 眼睛跟不上。
         .transition(reduceMotion ? .opacity : .asymmetric(
-            insertion: viewModel.lastFlipDirection >= 0
-                ? .move(edge: .trailing).combined(with: .opacity)
-                : .move(edge: .leading).combined(with: .opacity),
-            removal: viewModel.lastFlipDirection >= 0
-                ? .move(edge: .leading).combined(with: .opacity)
-                : .move(edge: .trailing).combined(with: .opacity)
+            insertion: .opacity,
+            removal: .offset(x: viewModel.lastFlipDirection >= 0 ? -Self.flipTravel : Self.flipTravel)
+                .combined(with: .opacity)
+                .animation(Motion.exit)
         ))
     }
+
+    /// 翻页时卡片的位移距离。
+    static let flipTravel: CGFloat = 60
 
     /// 渐隐带宽度: 该方向还有页面时, 卡片在面板边缘淡出 24pt, 提示可翻页。
     private static let edgeFadeWidth: CGFloat = 24
@@ -814,7 +836,7 @@ private struct PageEdgeButton: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(Motion.quick, value: hovering)
         .help(direction < 0 ? Text("Previous page") : Text("Next page"))
         .padding(.horizontal, 2)
     }
@@ -1012,5 +1034,50 @@ private struct RailKeycap: View {
             withAnimation(.easeOut(duration: 0.2).delay(Double(number - 1) * 0.015)) { shown = true }
         }
         .accessibilityHidden(true)
+    }
+}
+
+
+/// 卡片的两种进场位移, 都只动 offset (不动透明度, 面板/页容器自己会淡入), 用
+/// Motion.spring 落位, 按 `order` 依次开始 (每张晚 Motion.stagger):
+/// - 打开面板: `openToken` 变化时从下方 10pt 弹上来 (Motion.cardCascadeOnOpen)。
+/// - 翻页: `flipDirection` 非 0 时 (刚翻过页才出现的卡) 从那一侧 60pt 外弹回。
+private struct CardEntrance: ViewModifier {
+    let openToken: Int
+    let flipDirection: Int
+    let order: Int
+    let enabled: Bool
+    @State private var offset: CGSize
+
+    private static let openRise: CGFloat = 10
+
+    init(openToken: Int, flipDirection: Int, order: Int, enabled: Bool) {
+        self.openToken = openToken
+        self.flipDirection = flipDirection
+        self.order = order
+        self.enabled = enabled
+        // 起始位移在第一帧就要对, 放在 onAppear 里设会先画一帧终点位置再跳回去。
+        _offset = State(initialValue: enabled && flipDirection != 0
+            ? CGSize(width: CGFloat(flipDirection) * ShelfItemsRow.flipTravel, height: 0)
+            : .zero)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .offset(offset)
+            .onAppear {
+                guard offset != .zero else { return }
+                withAnimation(Motion.spring.delay(Double(order) * Motion.stagger)) { offset = .zero }
+            }
+            .onChange(of: openToken) { _, _ in
+                guard enabled, Motion.cardCascadeOnOpen else { return }
+                // 面板此时还是透明的 (show() 先调 prepareForShow 再淡入), 先放到下方再弹上来。
+                var start = Transaction()
+                start.disablesAnimations = true
+                withTransaction(start) { offset = CGSize(width: 0, height: Self.openRise) }
+                DispatchQueue.main.async {
+                    withAnimation(Motion.spring.delay(Double(order) * Motion.stagger)) { offset = .zero }
+                }
+            }
     }
 }

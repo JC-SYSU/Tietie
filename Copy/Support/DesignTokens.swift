@@ -95,3 +95,48 @@ enum Tokens {
         return UTType(filenameExtension: ext) ?? .data
     }
 }
+
+/// 全 app 共用的动效参数。调整整体手感只改这里。
+///
+/// 规则: 过冲只给面板里面的元素 (卡片约 3%, 小元素约 8%), 面板本身不过冲 (会在屏幕底边
+/// 露缝); 退场不过冲、比进场短、用加速曲线; 依次出现总长不超过 200ms; 大面积透明度
+/// 变化不用起步很快的曲线 (会像闪一下); 只动位移/缩放/透明度。「减弱动态效果」开启时,
+/// 各调用处退回纯淡入淡出。
+enum Motion {
+    /// 悬停、开关等即时反馈。
+    static let quick = Animation.easeOut(duration: 0.12)
+    /// 普通状态变化。
+    static let standard = Animation.easeOut(duration: 0.22)
+    /// 退场: 加速离开, 结尾不减速。
+    static let exit = Animation.timingCurve(0.4, 0, 1, 1, duration: 0.16)
+    /// 卡片落位: 约 3% 过冲后回落。
+    static let spring = Animation.spring(response: 0.32, dampingFraction: 0.75)
+    /// 小元素 (键帽、角标、新卡片) 弹出: 约 8% 过冲。
+    static let pop = Animation.spring(response: 0.26, dampingFraction: 0.65)
+    /// 依次出现时相邻两个的间隔。
+    static let stagger: Double = 0.015
+
+    /// 打开面板时卡片依次从下方弹上来。觉得每次唤出都要等一下, 改成 false 即可。
+    static let cardCascadeOnOpen = true
+    /// 选中的卡片轻微放大。不想要改成 false 即可。
+    static let liftSelectedCard = true
+    /// 选中卡片放大的倍数。
+    static let selectedCardScale: CGFloat = 1.02
+
+    /// AppKit 侧 (面板窗口) 用的时长和曲线, 和上面的 SwiftUI 动画对应。
+    enum Panel {
+        /// 打开: 内容上升的时长, 曲线前段快、落点利落 (Material 3 emphasized decelerate)。
+        static let openDuration: TimeInterval = 0.24
+        static let openCurve = CAMediaTimingFunction(controlPoints: 0.05, 0.7, 0.1, 1)
+        /// 打开: 面板透明度单独用普通减速, 免得一下子冒出来。
+        static let fadeInDuration: TimeInterval = 0.2
+        static let fadeInCurve = CAMediaTimingFunction(name: .easeOut)
+        /// 关闭 (含拖出卡片时缩回): 加速下沉。
+        static let closeDuration: TimeInterval = 0.16
+        /// 回车粘贴时的关闭, 更短, 文字早点落到目标 app。
+        static let pasteCloseDuration: TimeInterval = 0.12
+        static let closeCurve = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+    }
+
+    static var reduced: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+}

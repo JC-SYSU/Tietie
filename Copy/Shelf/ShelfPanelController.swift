@@ -180,7 +180,6 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
     /// the standard card row.
     static let compactShelfHeight: CGFloat = 244
     /// The close animation: how long it takes and how far the shelf sinks while it fades.
-    private static let closeDuration: TimeInterval = 0.2
     private static let closeDrop: CGFloat = 26
     /// 打开时内容从窗口底边下方多远升上来。
     private static let openRise: CGFloat = 24
@@ -373,13 +372,20 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             setShelfContentOffset(reduceMotion ? 0 : -Self.openRise, in: panel)
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            // 位移和透明度分开用两条曲线, 同一轮 run loop 里开始, 视觉上同时。位移前段快、
+            // 落点利落, 不过冲 (越过终点会在屏幕底边露缝); 透明度用普通减速 —— 大面积的
+            // 玻璃按位移那条曲线淡入, 前几帧就到了全亮, 看起来像闪一下。
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = reduceMotion ? 0 : 0.22
-                // 减速曲线, 前段比系统 easeOut 更快, 落点更利落 (Material 3 emphasized
-                // decelerate)。不用过冲: 内容越过终点会在屏幕底边露出一条缝。
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.05, 0.7, 0.1, 1)
+                context.duration = reduceMotion ? 0 : Motion.Panel.fadeInDuration
+                context.timingFunction = Motion.Panel.fadeInCurve
                 panel.animator().alphaValue = 1
-                if !reduceMotion { shelfContentView(in: panel)?.animator().setFrameOrigin(.zero) }
+            }
+            if !reduceMotion {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Motion.Panel.openDuration
+                    context.timingFunction = Motion.Panel.openCurve
+                    shelfContentView(in: panel)?.animator().setFrameOrigin(.zero)
+                }
             }
         }
         installKeyMonitor()
@@ -393,7 +399,9 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         DispatchQueue.main.async { [weak panel] in panel?.makeFirstResponder(nil) }
     }
 
-    func hide(restoreFocus: Bool, completion: (() -> Void)? = nil) {
+    /// - Parameter fast: 回车粘贴等「关掉后马上要在别的 app 里发生事情」的场合, 用更短的
+    ///   关闭动画 (`Motion.Panel.pasteCloseDuration`)。
+    func hide(restoreFocus: Bool, fast: Bool = false, completion: (() -> Void)? = nil) {
         guard let panel, isVisible else {
             completion?()
             return
@@ -423,9 +431,9 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
         closeToken += 1
         let token = closeToken
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.closeDuration
+            context.duration = fast ? Motion.Panel.pasteCloseDuration : Motion.Panel.closeDuration
             // Accelerating, with no ease at the end: the shelf leaves, it doesn't settle.
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            context.timingFunction = Motion.Panel.closeCurve
             panel.animator().alphaValue = 0
             shelfContentView(in: panel)?.animator().setFrameOrigin(NSPoint(x: 0, y: -Self.closeDrop))
         } completionHandler: { [weak self] in
@@ -479,17 +487,14 @@ final class ShelfPanelController: NSObject, NSWindowDelegate {
             return
         }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.dragRetractDuration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            context.duration = Motion.Panel.closeDuration
+            context.timingFunction = Motion.Panel.closeCurve
             panel.animator().alphaValue = 0
             shelfContentView(in: panel)?.animator().setFrameOrigin(NSPoint(x: 0, y: -Self.closeDrop))
         } completionHandler: {
             MainActor.assumeIsolated { finish() }
         }
     }
-
-    /// 拖出时面板缩回的时长, 比普通关闭 (0.2s) 短: 用户正拖着东西往外走, 面板要尽快让开。
-    private static let dragRetractDuration: TimeInterval = 0.16
 
     private func startDragEndPoll() {
         dragEndPoll?.invalidate()

@@ -6,6 +6,10 @@ import SwiftUI
 
 @MainActor
 final class AppCoordinator {
+    /// 关闭面板、切回目标 app 后, 等多久再发 ⌘V (原 0.15s)。关闭动画结束后才激活前一个
+    /// app, 这里只需等激活生效; 太短会让按键落到还没激活的窗口上。
+    static let pasteActivationDelay: TimeInterval = 0.1
+
     let store: ItemStore
     let pinboardStore: PinboardStore
     let settings: SettingsStore
@@ -310,7 +314,7 @@ final class AppCoordinator {
                 self.pasteFromShelf(item, plainTextOnly: plain)
             }
             if let controller {
-                controller.hide(restoreFocus: true, completion: paste)
+                controller.hide(restoreFocus: true, fast: true, completion: paste)
             } else {
                 paste()
             }
@@ -375,12 +379,12 @@ final class AppCoordinator {
                     HUD.show("Press ⌘V to paste")
                     return
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [pasteService = self.pasteService] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.pasteActivationDelay) { [pasteService = self.pasteService] in
                     pasteService.sendPasteKeystroke()
                 }
             }
             if let controller {
-                controller.hide(restoreFocus: true, completion: paste)
+                controller.hide(restoreFocus: true, fast: true, completion: paste)
             } else {
                 paste()
             }
@@ -710,7 +714,7 @@ final class AppCoordinator {
         }
         // 面板开着时先收起并把焦点还给原 app, 否则 ⌘V 会落进面板的搜索框。
         if shelfController.isVisible {
-            shelfController.hide(restoreFocus: true, completion: paste)
+            shelfController.hide(restoreFocus: true, fast: true, completion: paste)
         } else {
             paste()
         }
@@ -946,7 +950,7 @@ final class AppCoordinator {
             return
         }
         // Give app activation time to settle so the keystroke lands in the frontmost app.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [pasteService] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pasteActivationDelay) { [pasteService] in
             pasteService.sendPasteKeystroke()
         }
     }
