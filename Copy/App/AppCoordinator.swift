@@ -764,7 +764,15 @@ final class AppCoordinator {
     /// 最新一条是图片时粘贴它的图片文件完整路径。只取最新那一条: 没有任何文本可粘 (如
     /// 图片文件丢了) 时提示并停止, 不往回找更早的条目, 免得粘出意料之外的内容。
     func pasteLatestPlainText() {
-        guard let item = (try? store.recentItems(limit: 1))?.first else {
+        // 「从当前收藏夹粘贴」开启时，若当前激活的是某个收藏夹，就在该收藏夹里取最新。
+        var item: ClipItem?
+        if settings.pasteFromCurrentTab, case .pinboard(let id) = shelfViewModel.tab {
+            var filter = SearchFilter()
+            filter.pinboardIDs = [id]
+            item = (try? store.recentPage(filter: filter, limit: 1, favoritesFirst: false))?.first
+        }
+        item = item ?? (try? store.recentItems(limit: 1))?.first
+        guard let item else {
             HUD.show("Nothing to paste")
             return
         }

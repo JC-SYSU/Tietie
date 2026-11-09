@@ -193,6 +193,9 @@ final class SettingsStore {
     static let panelTintOpacityKey = "panelTintOpacity"
     static let panelFontSizeKey = "panelFontSize"
     static let cardBrightnessKey = "cardBrightness"
+    static let rememberTabKey = "rememberTab"
+    static let rememberFilterKey = "rememberFilter"
+    static let pasteFromCurrentTabKey = "pasteFromCurrentTab"
 
     var retention: RetentionPeriod {
         didSet {
@@ -392,6 +395,19 @@ final class SettingsStore {
     @ObservationIgnored var onPanelFontSizeChange: ((Double) -> Void)?
     /// 卡片底色的 HDR 亮度倍数, 1.0 = 普通白。大于 1 时用屏幕的 HDR 余量让卡片比
     /// SDR 白更亮; 屏幕不支持 HDR 时看起来和 1.0 一样。
+    /// 收起面板时记住当前收藏夹标签, 再次打开时恢复。
+    var rememberTab: Bool {
+        didSet { guard rememberTab != oldValue else { return }; defaults.set(rememberTab, forKey: Self.rememberTabKey) }
+    }
+    /// 收起面板时记住当前筛选条件 (搜索 token 和文字), 再次打开时恢复。
+    var rememberFilter: Bool {
+        didSet { guard rememberFilter != oldValue else { return }; defaults.set(rememberFilter, forKey: Self.rememberFilterKey) }
+    }
+    /// ⇧⌘V（以纯文本粘贴最新）默认从全局历史取最新一条; 开启时改为从当前激活的收藏夹里取最新。
+    var pasteFromCurrentTab: Bool {
+        didSet { guard pasteFromCurrentTab != oldValue else { return }; defaults.set(pasteFromCurrentTab, forKey: Self.pasteFromCurrentTabKey) }
+    }
+
     var cardBrightness: Double {
         didSet { if cardBrightness != oldValue { defaults.set(cardBrightness, forKey: Self.cardBrightnessKey) } }
     }
@@ -496,6 +512,9 @@ final class SettingsStore {
         compactShelf = false
         floatingShelf = false
         doubleClickToPaste = true
+        rememberTab = defaults.bool(forKey: Self.rememberTabKey)
+        rememberFilter = defaults.bool(forKey: Self.rememberFilterKey)
+        pasteFromCurrentTab = defaults.bool(forKey: Self.pasteFromCurrentTabKey)
     }
 
     private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }

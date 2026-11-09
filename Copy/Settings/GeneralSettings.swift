@@ -241,6 +241,26 @@ struct PanelSettings: View {
                 labeledSlider(value: $settings.cardBrightness, range: 1...2, step: 0.1,
                               text: String(format: "%.1f×", settings.cardBrightness))
             }
+
+            SettingsDivider()
+
+            SettingsRow(label: String(localized: "Remember Tab:"),
+                        help: String(localized: "Keep the current pinboard tab when the panel is dismissed and reopened.")) {
+                Toggle(String(localized: "Remember the active pinboard"), isOn: $settings.rememberTab)
+                    .toggleStyle(.checkbox)
+            }
+
+            SettingsRow(label: String(localized: "Remember Filter:"),
+                        help: String(localized: "Keep the search filters (tokens) across open/close. Any unfinished text being typed is cleared either way.")) {
+                Toggle(String(localized: "Remember the search filters"), isOn: $settings.rememberFilter)
+                    .toggleStyle(.checkbox)
+            }
+
+            SettingsRow(label: String(localized: "⇧⌘V Source:"),
+                        help: String(localized: "Off: ⇧⌘V always pastes the latest item from your full history. On: when a pinboard tab is active, ⇧⌘V pastes the latest item from that pinboard instead.")) {
+                Toggle(String(localized: "Paste from the active pinboard"), isOn: $settings.pasteFromCurrentTab)
+                    .toggleStyle(.checkbox)
+            }
         }
     }
 

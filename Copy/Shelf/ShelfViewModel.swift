@@ -452,7 +452,16 @@ final class ShelfViewModel {
         showingTips = false
         commandHeld = false
         hoveredItemID = nil
-        if !searchQuery.isEmpty { searchQuery = SearchQuery() }
+        // 记忆/清除 tab 和筛选条件由设置决定。
+        if !settings.rememberTab {
+            if case .pinboard = tab { tab = .history }
+        }
+        if !settings.rememberFilter {
+            if !searchQuery.isEmpty { searchQuery = SearchQuery() }
+        } else if !searchQuery.isEmpty {
+            // 保留 token，但清掉打到一半的搜索文字，以免再次打开时看到悬空的文字。
+            searchQuery.text = ""
+        }
         suggestions = []
         cachedApps = []
         isSearchFieldFocused = false

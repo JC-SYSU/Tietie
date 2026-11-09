@@ -383,3 +383,14 @@
 "Text too large" = "文本太大";
 "Image too small" = "图片太小";
 "Image too large" = "图片太大";
+
+/* Settings - Panel - Tab and Filter Memory */
+"Remember Tab:" = "记忆收藏夹：";
+"Remember the active pinboard" = "打开时恢复到上次的收藏夹";
+"Keep the current pinboard tab when the panel is dismissed and reopened." = "收起面板时，记住当前打开的收藏夹标签，下次打开时直接显示。";
+"Remember Filter:" = "记忆筛选：";
+"Remember the search filters" = "打开时恢复上次的筛选条件";
+"Keep the search filters (tokens) across open/close. Any unfinished text being typed is cleared either way." = "收起面板时，保留搜索 token（类型、App 等），正在打的文字仍然清空。";
+"⇧⌘V Source:" = "⇧⌘V 来源：";
+"Paste from the active pinboard" = "粘贴当前收藏夹的最新项目";
+"Off: ⇧⌘V always pastes the latest item from your full history. On: when a pinboard tab is active, ⇧⌘V pastes the latest item from that pinboard instead." = "关：⇧⌘V 始终粘贴全局历史的最新一条。开：激活某个收藏夹后，⇧⌘V 改从该收藏夹里取最新一条。";
