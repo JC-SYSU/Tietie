@@ -15,6 +15,7 @@ final class SettingsWindowController: NSWindowController {
 
     // 右侧内容区：用一个容器 NSView 托管 NSHostingController 的 view。
     private let contentHost = NSView()
+    private var sidebarHost: NSHostingView<SidebarView>?
     private var pageController: NSHostingController<SettingsView>?
 
     init(settings: SettingsStore, store: ItemStore) {
@@ -48,6 +49,7 @@ final class SettingsWindowController: NSWindowController {
         ))
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(sidebar)
+        sidebarHost = sidebar
 
         // ── 分隔线 ────────────────────────────────────────────────────
         let rule = NSBox()
@@ -83,37 +85,34 @@ final class SettingsWindowController: NSWindowController {
         selectedSection = section
         window?.title = section.title
 
-        // 重建 SwiftUI 页
         let newView = SettingsView(section: section, settings: settings, store: store)
-        if let old = pageController {
-            NotificationCenter.default.removeObserver(self,
-                name: NSView.frameDidChangeNotification, object: old.view)
-            old.view.removeFromSuperview()
+        if let hc = pageController {
+            // 只换 rootView，保留已有的 view 和约束，避免约束叠加导致布局错乱。
+            hc.rootView = newView
+        } else {
+            // 首次：建 HC、钉约束、装 KVO。
+            let hc = NSHostingController(rootView: newView)
+            hc.sizingOptions = .preferredContentSize
+            hc.view.translatesAutoresizingMaskIntoConstraints = false
+            contentHost.addSubview(hc.view)
+            NSLayoutConstraint.activate([
+                hc.view.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+                hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+                hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
+            ])
+            hc.view.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: hc.view, queue: .main) { [weak self] _ in
+                self?.fitWindow(animated: true)
+            }
+            pageController = hc
         }
-        let hc = NSHostingController(rootView: newView)
-        hc.sizingOptions = .preferredContentSize
-        hc.view.translatesAutoresizingMaskIntoConstraints = false
-        contentHost.addSubview(hc.view)
-        NSLayoutConstraint.activate([
-            hc.view.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
-            hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
-            hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
-        ])
-        pageController = hc
         fitWindow(animated: animated)
-        // 页面内容高度变化时（如排除 app 列表增减）自动调整窗口高度。
-        hc.view.postsFrameChangedNotifications = true
-        NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: hc.view, queue: .main) { [weak self] _ in
-            self?.fitWindow(animated: true)
-        }
 
         // 刷新边栏高亮
-        if let sidebar = window?.contentView?.subviews.first(where: { $0 is NSHostingView<SidebarView> }) as? NSHostingView<SidebarView> {
-            sidebar.rootView = SidebarView(selectedSection: section, onSelect: { [weak self] s in
-                self?.selectSection(s, animated: true)
-            })
-        }
+        sidebarHost?.rootView = SidebarView(selectedSection: section, onSelect: { [weak self] s in
+            self?.selectSection(s, animated: true)
+        })
     }
 
     func fitWindow(animated: Bool) {
