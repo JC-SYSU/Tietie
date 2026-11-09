@@ -2,27 +2,26 @@ import AppKit
 import CopyCore
 import SwiftUI
 
-/// 觅见风格的设置窗口: 左侧固定边栏导航 + 右侧内容区。
+/// 觅见风格的设置窗口：左侧固定边栏导航 + 右侧内容区。
 ///
-/// 左栏 160pt，竖排导航项，选中时左边有蓝色色条 + 淡蓝底色。
-/// 右栏 660pt，每页顶部一行大标题，内容由 SwiftUI 渲染。
-/// 窗口高度跟着当前页面内容自适应，以左上角为锚点。
+/// 每个标签页建一个独立的 NSHostingController，切换时 show/hide，不换 rootView，
+/// 避免 SwiftUI 异步重新 layout 导致 fittingSize 读取时机不准。
 @MainActor
 final class SettingsWindowController: NSWindowController {
     private let settings: SettingsStore
     private let store: ItemStore
     private var selectedSection: SettingsSection = .general
 
-    // 右侧内容区：用一个容器 NSView 托管 NSHostingController 的 view。
     private let contentHost = NSView()
     private var sidebarHost: NSHostingView<SidebarView>?
-    private var pageController: NSHostingController<SettingsView>?
+    /// 每个标签页一个 HC，第一次访问时懒建。
+    private var pageControllers: [SettingsSection: NSHostingController<SettingsView>] = [:]
 
     init(settings: SettingsStore, store: ItemStore) {
         self.settings = settings
         self.store = store
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: 500),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = SettingsSection.general.title
@@ -31,7 +30,6 @@ final class SettingsWindowController: NSWindowController {
         buildLayout()
         selectSection(.general, animated: false)
     }
-
     required init?(coder: NSCoder) { fatalError() }
 
     // MARK: Layout
@@ -40,24 +38,18 @@ final class SettingsWindowController: NSWindowController {
         guard let window, let contentView = window.contentView else { return }
         window.appearance = settings.shelfTheme.appearance
 
-        // ── 左侧边栏 ──────────────────────────────────────────────────
         let sidebar = NSHostingView(rootView: SidebarView(
             selectedSection: selectedSection,
-            onSelect: { [weak self] section in
-                self?.selectSection(section, animated: true)
-            }
+            onSelect: { [weak self] section in self?.selectSection(section, animated: true) }
         ))
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(sidebar)
         sidebarHost = sidebar
 
-        // ── 分隔线 ────────────────────────────────────────────────────
-        let rule = NSBox()
-        rule.boxType = .separator
+        let rule = NSBox(); rule.boxType = .separator
         rule.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(rule)
 
-        // ── 右侧内容区容器 ────────────────────────────────────────────
         contentHost.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(contentHost)
 
@@ -74,25 +66,25 @@ final class SettingsWindowController: NSWindowController {
 
             contentHost.leadingAnchor.constraint(equalTo: rule.trailingAnchor),
             contentHost.topAnchor.constraint(equalTo: contentView.topAnchor),
-            contentHost.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             contentHost.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            contentHost.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
     }
 
     // MARK: Navigation
 
     func selectSection(_ section: SettingsSection, animated: Bool) {
+        pageControllers[selectedSection]?.view.isHidden = true
         selectedSection = section
         window?.title = section.title
 
-        let newView = SettingsView(section: section, settings: settings, store: store)
-        if let hc = pageController {
-            // 只换 rootView，保留已有的 view 和约束，避免约束叠加导致布局错乱。
-            hc.rootView = newView
+        let hc: NSHostingController<SettingsView>
+        if let existing = pageControllers[section] {
+            hc = existing
         } else {
-            // 首次：建 HC、钉约束、装 KVO。
-            let hc = NSHostingController(rootView: newView)
-            hc.sizingOptions = .preferredContentSize
+            let view = SettingsView(section: section, settings: settings, store: store)
+            hc = NSHostingController(rootView: view)
+            hc.sizingOptions = []
             hc.view.translatesAutoresizingMaskIntoConstraints = false
             contentHost.addSubview(hc.view)
             NSLayoutConstraint.activate([
@@ -100,53 +92,40 @@ final class SettingsWindowController: NSWindowController {
                 hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
                 hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
             ])
-            hc.view.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                forName: NSView.frameDidChangeNotification, object: hc.view, queue: .main) { [weak self] _ in
-                self?.fitWindow(animated: true)
-            }
-            pageController = hc
+            pageControllers[section] = hc
         }
-        fitWindow(animated: animated)
+        hc.view.isHidden = false
+        hc.view.layoutSubtreeIfNeeded()
+        fitWindow(for: hc, animated: animated)
 
-        // 刷新边栏高亮
-        sidebarHost?.rootView = SidebarView(selectedSection: section, onSelect: { [weak self] s in
-            self?.selectSection(s, animated: true)
-        })
+        sidebarHost?.rootView = SidebarView(selectedSection: section,
+            onSelect: { [weak self] s in self?.selectSection(s, animated: true) })
     }
 
-    func fitWindow(animated: Bool) {
-        guard let window, let hc = pageController else { return }
-        var contentHeight = hc.preferredContentSize.height
-        if contentHeight < 40 { contentHeight = hc.view.fittingSize.height }
-        guard contentHeight > 40 else { return }
-        let frameSize = window.frameRect(forContentRect: NSRect(
-            x: 0, y: 0,
-            width: SettingsLayout.windowWidth,
-            height: max(contentHeight, 200)))
+    private func fitWindow(for hc: NSHostingController<SettingsView>, animated: Bool) {
+        guard let window else { return }
+        let h = hc.view.fittingSize.height
+        guard h > 40 else { return }
+        let contentRect = NSRect(x: 0, y: 0,
+                                 width: SettingsLayout.windowWidth,
+                                 height: max(h, 200))
+        let target = window.frameRect(forContentRect: contentRect)
         var frame = window.frame
-        frame.origin.y += frame.height - frameSize.height
-        frame.size = frameSize.size
+        frame.origin.y += frame.height - target.height
+        frame.size = target.size
         window.setFrame(frame, display: true, animate: animated && window.isVisible)
     }
 
-
-
-    func setTheme(_ theme: ShelfTheme) {
-        window?.appearance = theme.appearance
-    }
+    func setTheme(_ theme: ShelfTheme) { window?.appearance = theme.appearance }
 
     func show() {
-        if window?.isVisible != true {
-            fitWindow(animated: false)
-            window?.center()
-        }
+        if window?.isVisible != true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }
 
-// MARK: - 左侧边栏 SwiftUI
+// MARK: - 左侧边栏
 
 private struct SidebarView: View {
     var selectedSection: SettingsSection
@@ -154,11 +133,9 @@ private struct SidebarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // App 品牌区
             VStack(alignment: .leading, spacing: 2) {
                 Text("Copy")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
                 Text("Clipboard shelf")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
@@ -169,13 +146,9 @@ private struct SidebarView: View {
 
             Divider().padding(.horizontal, 8).padding(.bottom, 8)
 
-            // 导航列表
             ForEach(SettingsSection.allCases) { section in
-                SidebarItem(
-                    section: section,
-                    isSelected: section == selectedSection,
-                    onTap: { onSelect(section) }
-                )
+                SidebarItem(section: section, isSelected: section == selectedSection,
+                            onTap: { onSelect(section) })
             }
             Spacer(minLength: 0)
         }
@@ -193,30 +166,24 @@ private struct SidebarItem: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 0) {
-                // 选中色条
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(isSelected ? Color.accentColor : Color.clear)
                     .frame(width: 3, height: 18)
-                    .padding(.leading, 8)
-                    .padding(.trailing, 6)
-
+                    .padding(.leading, 8).padding(.trailing, 6)
                 Image(systemName: section.systemImage)
                     .font(.system(size: 13))
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                     .frame(width: 18)
-
                 Text(section.title)
                     .font(.system(size: 13))
                     .foregroundStyle(isSelected ? Color.primary : Color(nsColor: .labelColor))
                     .padding(.leading, 8)
-
                 Spacer(minLength: 0)
             }
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected
-                          ? Color.accentColor.opacity(0.10)
+                    .fill(isSelected ? Color.accentColor.opacity(0.10)
                           : (hovered ? Color.primary.opacity(0.05) : Color.clear))
                     .padding(.horizontal, 6)
             )
