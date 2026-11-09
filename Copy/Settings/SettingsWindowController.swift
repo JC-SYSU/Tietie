@@ -91,6 +91,9 @@ final class SettingsWindowController: NSWindowController {
                 hc.view.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
                 hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
                 hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
+                // 四边都钉住: 窗口高度固定, 页面占满内容区, 内容超出时由 ScrollView 滚动。
+                // 只钉三边时 sizingOptions = [] 让 view 高度为 0, 整页空白。
+                hc.view.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor),
             ])
             pageControllers[section] = hc
         }

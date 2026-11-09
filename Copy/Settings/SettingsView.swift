@@ -32,5 +32,6 @@ struct SettingsView: View {
             .frame(width: SettingsLayout.contentWidth, alignment: .topLeading)
         }
         .frame(width: SettingsLayout.contentWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
