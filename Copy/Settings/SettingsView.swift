@@ -29,5 +29,6 @@ struct SettingsView: View {
             case .privacy:  PrivacySettings(settings: settings, store: store)
             }
         }
+        .frame(width: SettingsLayout.contentWidth, alignment: .topLeading)
     }
 }
