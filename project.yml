@@ -30,6 +30,10 @@ targets:
       path: Copy/Info.plist
       properties:
         CFBundleDisplayName: Copy
+        # 界面语言：没有这一项，macOS 不会把 app 当作支持中文，界面会退回英文。
+        CFBundleLocalizations:
+          - en
+          - zh-Hans
         CFBundleShortVersionString: "2026.10.19.2"
         CFBundleVersion: "9"
         LSUIElement: true
