@@ -1,23 +1,33 @@
 import CopyCore
 import SwiftUI
 
-/// 「历史」页: 保留多久、占用多少空间、清空。保留时长存在 `SettingsStore`, 存储统计和
-/// 清空走 `store`。
+/// 「历史」页: 保留与候选 / 存储用量。
 struct HistorySettings: View {
     @Bindable var settings: SettingsStore
     let store: ItemStore
 
     var body: some View {
         SettingsPane {
+            // ── 保留与候选 ─────────────────────────────────────────────
             SettingsRow(label: String(localized: "Keep History:"), help: retentionHelp) {
                 StepSlider(labels: RetentionPeriod.sliderOrder.map(\.title), index: retentionIndex)
                     .frame(width: SettingsLayout.helpWidth)
-                    // 让左栏标签和滑轨 (StepSlider 内 y=34) 对齐, 默认会落到滑块底部。
                     .alignmentGuide(.firstTextBaseline) { _ in 38 }
+            }
+
+            SettingsRow(label: String(localized: "Show:"),
+                        help: String(localized: "Maximum number of items shown in the shelf at once.")) {
+                Picker("", selection: $settings.candidateLimit) {
+                    ForEach([10, 25, 50], id: \.self) { n in
+                        Text(String(format: String(localized: "%d cards"), n)).tag(n)
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).fixedSize()
             }
 
             SettingsDivider()
 
+            // ── 存储用量 ───────────────────────────────────────────────
             SettingsRow(label: String(localized: "Storage:")) {
                 StorageUsageSection(store: store)
                     .frame(width: SettingsLayout.helpWidth)
@@ -25,15 +35,11 @@ struct HistorySettings: View {
         }
     }
 
-    /// Bridges the `StepSlider`'s `Int` position to the stored `RetentionPeriod`, using the
-    /// shortest-to-longest `sliderOrder`. Falls back to the last stop (Unlimited) if the
-    /// stored value somehow isn't in the order.
     private var retentionIndex: Binding<Int> {
         let order = RetentionPeriod.sliderOrder
         return Binding(
             get: { order.firstIndex(of: settings.retention) ?? order.count - 1 },
-            set: { settings.retention = order[$0] }
-        )
+            set: { settings.retention = order[$0] })
     }
 
     private var retentionHelp: String {

@@ -15,14 +15,11 @@ struct SettingsView: View {
 
     @ViewBuilder private var content: some View {
         switch section {
-        case .general: GeneralSettings(settings: settings)
-        case .panel: PanelSettings(settings: settings)
-        case .cards: CardsSettings(settings: settings)
-        case .copyPaste: CopyPasteSettings(settings: settings)
-        case .shortcuts: ShortcutsSettings(settings: settings)
-        case .history: HistorySettings(settings: settings, store: store)
-        case .privacy: PrivacySettings(settings: settings, store: store)
-        case .about: AboutSettings(settings: settings)
+        case .general:  GeneralSettings(settings: settings)
+        case .history:  HistorySettings(settings: settings, store: store)
+        case .panel:    PanelSettings(settings: settings)
+        case .action:   ActionSettings(settings: settings)
+        case .privacy:  PrivacySettings(settings: settings, store: store)
         }
     }
 }

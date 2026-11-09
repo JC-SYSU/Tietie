@@ -394,3 +394,7 @@
 "⇧⌘V Source:" = "⇧⌘V 来源：";
 "Paste from the active pinboard" = "粘贴当前收藏夹的最新项目";
 "Off: ⇧⌘V always pastes the latest item from your full history. On: when a pinboard tab is active, ⇧⌘V pastes the latest item from that pinboard instead." = "关：⇧⌘V 始终粘贴全局历史的最新一条。开：激活某个收藏夹后，⇧⌘V 改从该收藏夹里取最新一条。";
+
+/* Settings sections */
+"Actions" = "操作";
+"Panel" = "面板";

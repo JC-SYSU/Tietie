@@ -25,14 +25,6 @@ struct PrivacySettings: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(label: String(localized: "Screen Sharing:"),
-                        help: String(localized: "Keeps your clipboard history out of screenshots, screen recordings and shared screens.")) {
-                Toggle(String(localized: "Hide Copy windows during screen sharing"), isOn: $settings.hideDuringScreenSharing)
-                    .toggleStyle(.checkbox)
-            }
-
-            SettingsDivider()
-
             SettingsRow(label: String(localized: "Capture Rules:"),
                         help: String(localized: "The whitelist goes first: when it's on, only matching content is considered. What's left then goes through the blacklist.")) {
                 Picker("", selection: $page) {
