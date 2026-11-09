@@ -21,7 +21,7 @@ final class SettingsWindowController: NSWindowController {
         self.settings = settings
         self.store = store
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = SettingsSection.general.title
@@ -95,31 +95,18 @@ final class SettingsWindowController: NSWindowController {
             pageControllers[section] = hc
         }
         hc.view.isHidden = false
-        hc.view.layoutSubtreeIfNeeded()
-        fitWindow(for: hc, animated: animated)
 
         sidebarHost?.rootView = SidebarView(selectedSection: section,
             onSelect: { [weak self] s in self?.selectSection(s, animated: true) })
     }
 
-    private func fitWindow(for hc: NSHostingController<SettingsView>, animated: Bool) {
-        guard let window else { return }
-        let h = hc.view.fittingSize.height
-        guard h > 40 else { return }
-        let contentRect = NSRect(x: 0, y: 0,
-                                 width: SettingsLayout.windowWidth,
-                                 height: max(h, 200))
-        let target = window.frameRect(forContentRect: contentRect)
-        var frame = window.frame
-        frame.origin.y += frame.height - target.height
-        frame.size = target.size
-        window.setFrame(frame, display: true, animate: animated && window.isVisible)
-    }
-
     func setTheme(_ theme: ShelfTheme) { window?.appearance = theme.appearance }
 
     func show() {
-        if window?.isVisible != true { window?.center() }
+        if window?.isVisible != true {
+            window?.setContentSize(NSSize(width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight))
+            window?.center()
+        }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

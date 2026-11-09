@@ -7,6 +7,8 @@ enum SettingsLayout {
     static let sidebarWidth: CGFloat = 160
     static let contentWidth: CGFloat = 620
     static var windowWidth: CGFloat { sidebarWidth + 1 + contentWidth }
+    /// 固定窗口高度; 内容超出时 ScrollView 负责滚动。
+    static let windowHeight: CGFloat = 680
     /// 右侧内容区里，每页 SwiftUI 视图的宽度。
     static let paneWidth: CGFloat = contentWidth
     /// 左栏标签宽度。中文最长「以纯文本粘贴最新：」约 115pt。
