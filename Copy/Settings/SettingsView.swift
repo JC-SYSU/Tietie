@@ -14,12 +14,20 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch section {
-        case .general:  GeneralSettings(settings: settings)
-        case .history:  HistorySettings(settings: settings, store: store)
-        case .panel:    PanelSettings(settings: settings)
-        case .action:   ActionSettings(settings: settings)
-        case .privacy:  PrivacySettings(settings: settings, store: store)
+        VStack(alignment: .leading, spacing: 0) {
+            // 页面大标题（觅见风格）
+            Text(section.title)
+                .font(.system(size: 18, weight: .semibold))
+                .padding(.horizontal, 28)
+                .padding(.top, 20)
+                .padding(.bottom, 2)
+            switch section {
+            case .general:  GeneralSettings(settings: settings)
+            case .history:  HistorySettings(settings: settings, store: store)
+            case .panel:    PanelSettings(settings: settings)
+            case .action:   ActionSettings(settings: settings)
+            case .privacy:  PrivacySettings(settings: settings, store: store)
+            }
         }
     }
 }

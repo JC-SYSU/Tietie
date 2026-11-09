@@ -25,15 +25,9 @@ struct PrivacySettings: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(label: String(localized: "Capture Rules:"),
-                        help: String(localized: "The whitelist goes first: when it's on, only matching content is considered. What's left then goes through the blacklist.")) {
-                Picker("", selection: $page) {
-                    ForEach(RulesPage.allCases) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
+            // inline tab bar：蓝色底线指示当前页，不会被误读成单选题。
+            RulesTabBar(selection: $page)
+                .padding(.leading, SettingsLayout.labelWidth + SettingsLayout.columnSpacing)
 
             switch page {
             case .whitelist: WhitelistRulesPage(settings: settings)
@@ -657,5 +651,47 @@ private func ruleTitle(_ rule: RuleRef, _ rules: CaptureRules) -> String {
     case .preset(let p): return p.title
     case .blacklistKeyword(let id):
         return String(format: String(localized: "Blacklist keyword: %@"), keywordPattern(id, rules) ?? "?")
+    }
+}
+
+// MARK: - Inline tab bar for rules pages
+
+private struct RulesTabBar: View {
+    @Binding var selection: PrivacySettings.RulesPage
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(PrivacySettings.RulesPage.allCases) { page in
+                RulesTabItem(title: page.title, isSelected: selection == page) {
+                    selection = page
+                }
+            }
+        }
+    }
+}
+
+private struct RulesTabItem: View {
+    let title: String
+    let isSelected: Bool
+    let onTap: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 3) {
+                Text(title)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 4)
+                // 底部指示条
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .frame(height: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .background(hovered && !isSelected ? Color.primary.opacity(0.04) : Color.clear)
+        .onHover { hovered = $0 }
     }
 }

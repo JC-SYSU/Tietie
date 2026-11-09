@@ -3,10 +3,13 @@ import SwiftUI
 /// 设置窗口的统一排版: 经典 macOS 偏好设置的两栏格式。左栏是右对齐的标签 (带冒号),
 /// 右栏是控件, 控件下面可以跟一行灰色说明。各页面只用这里的几个组件拼, 不各自写间距。
 enum SettingsLayout {
-    /// 整个设置窗口内容区的宽度, 各页面相同, 切换标签时窗口只变高度。
-    static let paneWidth: CGFloat = 620
-    /// 左栏标签宽度。中文最长「以纯文本粘贴最新：」约 115pt; 英文最长
-    /// "Paste Latest as Plain Text:" 约 165pt, 比这里宽, 英文界面下这一个标签会折行。
+    /// 整个窗口宽度 = 左侧边栏 + 1pt 分隔线 + 右侧内容区。
+    static let sidebarWidth: CGFloat = 160
+    static let contentWidth: CGFloat = 620
+    static var windowWidth: CGFloat { sidebarWidth + 1 + contentWidth }
+    /// 右侧内容区里，每页 SwiftUI 视图的宽度。
+    static let paneWidth: CGFloat = contentWidth
+    /// 左栏标签宽度。中文最长「以纯文本粘贴最新：」约 115pt。
     static let labelWidth: CGFloat = 150
     static let rowSpacing: CGFloat = 14
     static let columnSpacing: CGFloat = 12
@@ -23,7 +26,7 @@ struct SettingsPane<Content: View>: View {
             content
         }
         .padding(.horizontal, 28)
-        .padding(.top, 22)
+        .padding(.top, 14)
         .padding(.bottom, 26)
         .frame(width: SettingsLayout.paneWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)

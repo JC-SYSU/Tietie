@@ -2,52 +2,144 @@ import AppKit
 import CopyCore
 import SwiftUI
 
-/// Hosts the Settings window in a standard titled window that `AppCoordinator` owns and
-/// shows directly, rather than through SwiftUI's `Settings` scene.
+/// 觅见风格的设置窗口: 左侧固定边栏导航 + 右侧内容区。
 ///
-/// Hands-on testing showed the `Settings` scene doesn't work for Copy's configuration:
-/// Copy has no `WindowGroup` (it's a menu-bar-only, `LSUIElement` app), and in that
-/// shape `NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)`
-/// reports `handled == true` but never actually creates a window. Managing the window
-/// ourselves sidesteps that mechanism entirely.
-///
-/// 布局是经典 macOS 偏好设置: `NSTabViewController` 的 `.toolbar` 样式在窗口顶部放一排
-/// 图标标签, 每个标签是一个 SwiftUI 页面。页面宽度固定 (`SettingsLayout.paneWidth`),
-/// 高度由内容决定; 切换标签时窗口以左上角为锚点动画改变高度。
+/// 左栏 160pt，竖排导航项，选中时左边有蓝色色条 + 淡蓝底色。
+/// 右栏 660pt，每页顶部一行大标题，内容由 SwiftUI 渲染。
+/// 窗口高度跟着当前页面内容自适应，以左上角为锚点。
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    convenience init(settings: SettingsStore, store: ItemStore) {
-        let tabs = SettingsTabViewController()
-        tabs.tabStyle = .toolbar
-        for section in SettingsSection.allCases {
-            let page = NSHostingController(rootView: SettingsView(section: section, settings: settings, store: store))
-            // 页面的理想尺寸写进 preferredContentSize, 内容变高 (如排除列表变化) 时
-            // 会触发 preferredContentSizeDidChange, 窗口跟着调整。
-            page.sizingOptions = .preferredContentSize
-            page.title = section.title
-            let item = NSTabViewItem(viewController: page)
-            item.label = section.title
-            item.image = NSImage(systemSymbolName: section.systemImage, accessibilityDescription: section.title)
-            tabs.addTabViewItem(item)
-        }
-        let window = NSWindow(contentViewController: tabs)
-        window.appearance = settings.shelfTheme.appearance
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.toolbarStyle = .preference
+    private let settings: SettingsStore
+    private let store: ItemStore
+    private var selectedSection: SettingsSection = .general
+
+    // 右侧内容区：用一个容器 NSView 托管 NSHostingController 的 view。
+    private let contentHost = NSView()
+    private var pageController: NSHostingController<SettingsView>?
+
+    init(settings: SettingsStore, store: ItemStore) {
+        self.settings = settings
+        self.store = store
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered, defer: false)
+        window.title = SettingsSection.general.title
         window.isReleasedWhenClosed = false
-        self.init(window: window)
-        tabs.fitWindow(animated: false)
+        super.init(window: window)
+        buildLayout()
+        selectSection(.general, animated: false)
     }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: Layout
+
+    private func buildLayout() {
+        guard let window, let contentView = window.contentView else { return }
+        window.appearance = settings.shelfTheme.appearance
+
+        // ── 左侧边栏 ──────────────────────────────────────────────────
+        let sidebar = NSHostingView(rootView: SidebarView(
+            selectedSection: selectedSection,
+            onSelect: { [weak self] section in
+                self?.selectSection(section, animated: true)
+            }
+        ))
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(sidebar)
+
+        // ── 分隔线 ────────────────────────────────────────────────────
+        let rule = NSBox()
+        rule.boxType = .separator
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(rule)
+
+        // ── 右侧内容区容器 ────────────────────────────────────────────
+        contentHost.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(contentHost)
+
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: contentView.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: SettingsLayout.sidebarWidth),
+
+            rule.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            rule.topAnchor.constraint(equalTo: contentView.topAnchor),
+            rule.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            rule.widthAnchor.constraint(equalToConstant: 1),
+
+            contentHost.leadingAnchor.constraint(equalTo: rule.trailingAnchor),
+            contentHost.topAnchor.constraint(equalTo: contentView.topAnchor),
+            contentHost.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            contentHost.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+        ])
+    }
+
+    // MARK: Navigation
+
+    func selectSection(_ section: SettingsSection, animated: Bool) {
+        selectedSection = section
+        window?.title = section.title
+
+        // 重建 SwiftUI 页
+        let newView = SettingsView(section: section, settings: settings, store: store)
+        if let old = pageController {
+            NotificationCenter.default.removeObserver(self,
+                name: NSView.frameDidChangeNotification, object: old.view)
+            old.view.removeFromSuperview()
+        }
+        let hc = NSHostingController(rootView: newView)
+        hc.sizingOptions = .preferredContentSize
+        hc.view.translatesAutoresizingMaskIntoConstraints = false
+        contentHost.addSubview(hc.view)
+        NSLayoutConstraint.activate([
+            hc.view.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+            hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+            hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
+        ])
+        pageController = hc
+        fitWindow(animated: animated)
+        // 页面内容高度变化时（如排除 app 列表增减）自动调整窗口高度。
+        hc.view.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: hc.view, queue: .main) { [weak self] _ in
+            self?.fitWindow(animated: true)
+        }
+
+        // 刷新边栏高亮
+        if let sidebar = window?.contentView?.subviews.first(where: { $0 is NSHostingView<SidebarView> }) as? NSHostingView<SidebarView> {
+            sidebar.rootView = SidebarView(selectedSection: section, onSelect: { [weak self] s in
+                self?.selectSection(s, animated: true)
+            })
+        }
+    }
+
+    func fitWindow(animated: Bool) {
+        guard let window, let hc = pageController else { return }
+        var contentHeight = hc.preferredContentSize.height
+        if contentHeight < 40 { contentHeight = hc.view.fittingSize.height }
+        guard contentHeight > 40 else { return }
+        let frameSize = window.frameRect(forContentRect: NSRect(
+            x: 0, y: 0,
+            width: SettingsLayout.windowWidth,
+            height: max(contentHeight, 200)))
+        var frame = window.frame
+        frame.origin.y += frame.height - frameSize.height
+        frame.size = frameSize.size
+        window.setFrame(frame, display: true, animate: animated && window.isVisible)
+    }
+
+
 
     func setTheme(_ theme: ShelfTheme) {
         window?.appearance = theme.appearance
     }
 
     func show() {
-        // Only center on first appearance — recentering on every reopen would undo a
-        // user-moved window position.
         if window?.isVisible != true {
-            (contentViewController as? SettingsTabViewController)?.fitWindow(animated: false)
+            fitWindow(animated: false)
             window?.center()
         }
         window?.makeKeyAndOrderFront(nil)
@@ -55,35 +147,83 @@ final class SettingsWindowController: NSWindowController {
     }
 }
 
-/// 切换标签或页面内容尺寸变化时, 把窗口内容区调成当前页面的理想尺寸。
-@MainActor
-final class SettingsTabViewController: NSTabViewController {
-    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-        super.tabView(tabView, didSelect: tabViewItem)
-        view.window?.title = tabViewItem?.label ?? ""
-        fitWindow(animated: true)
-    }
+// MARK: - 左侧边栏 SwiftUI
 
-    override func preferredContentSizeDidChange(for viewController: NSViewController) {
-        super.preferredContentSizeDidChange(for: viewController)
-        if viewController === tabViewItems[selectedTabViewItemIndex].viewController {
-            fitWindow(animated: true)
+private struct SidebarView: View {
+    var selectedSection: SettingsSection
+    let onSelect: (SettingsSection) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // App 品牌区
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copy")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("Clipboard shelf")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
+            .padding(.bottom, 14)
+
+            Divider().padding(.horizontal, 8).padding(.bottom, 8)
+
+            // 导航列表
+            ForEach(SettingsSection.allCases) { section in
+                SidebarItem(
+                    section: section,
+                    isSelected: section == selectedSection,
+                    onTap: { onSelect(section) }
+                )
+            }
+            Spacer(minLength: 0)
         }
+        .frame(width: SettingsLayout.sidebarWidth)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
+}
 
-    func fitWindow(animated: Bool) {
-        guard let window = view.window ?? viewIfLoaded?.window,
-              tabViewItems.indices.contains(selectedTabViewItemIndex),
-              let page = tabViewItems[selectedTabViewItemIndex].viewController else { return }
-        var size = page.preferredContentSize
-        if size.width < 1 || size.height < 1 { size = page.view.fittingSize }
-        guard size.width >= 1, size.height >= 1 else { return }
-        window.title = tabViewItems[selectedTabViewItemIndex].label
-        let target = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-        var frame = window.frame
-        // 以左上角为锚点: macOS 坐标系 y 向上, 保持 maxY 不变。
-        frame.origin.y += frame.height - target.height
-        frame.size = target.size
-        window.setFrame(frame, display: true, animate: animated && window.isVisible)
+private struct SidebarItem: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let onTap: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 0) {
+                // 选中色条
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .frame(width: 3, height: 18)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 6)
+
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .frame(width: 18)
+
+                Text(section.title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.primary : Color(nsColor: .labelColor))
+                    .padding(.leading, 8)
+
+                Spacer(minLength: 0)
+            }
+            .frame(height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected
+                          ? Color.accentColor.opacity(0.10)
+                          : (hovered ? Color.primary.opacity(0.05) : Color.clear))
+                    .padding(.horizontal, 6)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .padding(.horizontal, 2)
     }
 }
