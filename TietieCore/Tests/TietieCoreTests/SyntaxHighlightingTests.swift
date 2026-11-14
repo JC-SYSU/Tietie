@@ -1,0 +1,208 @@
+import XCTest
+@testable import TietieCore
+
+final class SyntaxHighlightingTests: XCTestCase {
+    // MARK: - Detection
+
+    func testSwiftSnippetDetectsAsSwift() {
+        let code = [
+            "func greet(name: String) -> String {",
+            "    let greeting = \"Hello, \\(name)!\"",
+            "    // say hello",
+            "    return greeting",
+            "}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(code), .swift)
+    }
+
+    func testJSONObjectDetectsAsJSON() {
+        let json = [
+            "{",
+            "  \"name\": \"Copy\",",
+            "  \"version\": 7,",
+            "  \"features\": [\"clipboard\", \"sync\"]",
+            "}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(json), .json)
+    }
+
+    func testPythonSnippetDetectsAsPython() {
+        let code = [
+            "class Greeter:",
+            "    def __init__(self, name):",
+            "        self.name = name",
+            "",
+            "    def greet(self):",
+            "        # say hello",
+            "        message = f\"Hello, {self.name}!\"",
+            "        print(message)",
+            "        return message",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(code), .python)
+    }
+
+    func testJavaScriptSnippetDetectsAsJavaScript() {
+        let code = [
+            "function greet(name) {",
+            "    const message = `Hello, ${name}!`;",
+            "    console.log(message);",
+            "    return message;",
+            "}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(code), .javascript)
+    }
+
+    /// Fix round 2 regression: a bare struct with two properties is one of the most
+    /// common things a dev copies, and must clear the bar at exactly 2 signals
+    /// (`struct`, `let`) without needing a third.
+    func testBareStructDetectsAsSwift() {
+        let code = [
+            "struct Point {",
+            "    let x: Double",
+            "    let y: Double",
+            "}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(code), .swift)
+    }
+
+    /// Fix round 2 regression: a one-line function (`func` + `->`, no `let`/`var` at
+    /// all) must still detect at 2 signals.
+    func testOneLineFunctionDetectsAsSwift() {
+        XCTAssertEqual(CodeDetector.detect("func add(a: Int, b: Int) -> Int { a + b }"), .swift)
+    }
+
+    /// A control-flow snippet with no declaration keyword beyond `let` — the `let`
+    /// binding, an `[.enumCase]` array, and `return true` together must clear the bar.
+    func testControlFlowSnippetDetectsAsSwift() {
+        let code = [
+            "if !viewModel.isSearchFieldFocused,",
+            "   event.modifierFlags.intersection([.command, .option, .control]).isEmpty,",
+            "   let chars = event.charactersIgnoringModifiers, chars.count == 1 {",
+            "    viewModel.updateSearchText(chars)",
+            "    return true",
+            "}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(CodeDetector.detect(code), .swift)
+    }
+
+    /// Fix round 2 regression: same shape as above, with a `return` inside the braces
+    /// (`return` itself isn't a tracked signal — `func` + `->` alone must be enough).
+    func testOneLineFunctionWithReturnDetectsAsSwift() {
+        XCTAssertEqual(CodeDetector.detect("func square(x: Int) -> Int { return x * x }"), .swift)
+    }
+
+    /// Fix round 1's false positive, still guarded against after round 2 lowered the
+    /// bar back to ≥2: a single inline code fragment quoted inside an ordinary sentence
+    /// must not tip the whole sentence into "code". The naive fix (raising the bar to
+    /// ≥3) overshot and broke the two tests above; the real fix was recognizing that
+    /// `guard let user = ...` is ONE Swift idiom, not two signals — `swiftSignals`'
+    /// generic `let`/`var` patterns now exclude a match immediately preceded by
+    /// `guard\s+`, so this text only ever scores the single `guard let` signal.
+    func testInlineCodeFragmentQuotedInProseDoesNotDetectAsCode() {
+        let text = "I added a guard clause: `guard let user = self.currentUser else "
+            + "{ return } ` then removed the old check."
+        XCTAssertNil(CodeDetector.detect(text))
+    }
+
+    /// Fix round 1 regression: `#!` followed by a space (a Markdown-ish aside, not an
+    /// interpreter path) must not be mistaken for a shebang.
+    func testMarkdownAsideStartingWithHashBangDoesNotDetectAsShell() {
+        let text = "#! Important reminder\nDon't forget to renew the certificate before it expires."
+        XCTAssertNil(CodeDetector.detect(text))
+    }
+
+    /// Fix round 1 regression: an unrelated word immediately before an unrelated
+    /// `{ prop: value; }`-shaped clause, mid-sentence, must not be mistaken for a CSS
+    /// rule — the selector portion must anchor to a line start, not match any trailing
+    /// word wherever one happens to sit next to a brace.
+    func testProseSentenceResemblingCSSDoesNotDetectAsCSS() {
+        let text = "Color scheme { color: navy; accent: crimson; } was the designer's pick for the mockup."
+        XCTAssertNil(CodeDetector.detect(text))
+    }
+
+    /// The most important test in this file: ordinary English prose must never be
+    /// mistaken for code, however many curly braces of coincidence life throws at it.
+    func testProseParagraphDoesNotDetectAsCode() {
+        let prose = "Copy is a clipboard manager for macOS. It keeps track of everything "
+            + "you copy so you can find it again later. The history is stored locally on "
+            + "your Mac and never leaves the device unless you choose to sync it yourself."
+        XCTAssertNil(CodeDetector.detect(prose))
+    }
+
+    func testEmptyAndWhitespaceTextDoesNotDetectAsCode() {
+        XCTAssertNil(CodeDetector.detect(""))
+        XCTAssertNil(CodeDetector.detect("   \n\t  "))
+    }
+
+    // MARK: - Tokenization
+
+    func testSwiftTokensCoverKeywordStringAndComment() {
+        let code = [
+            "func greet(name: String) -> String {",
+            "    let greeting = \"Hello, \\(name)!\"",
+            "    // say hello",
+            "    return greeting",
+            "}",
+        ].joined(separator: "\n")
+        let tokens = SyntaxHighlighter.tokens(for: code, language: .swift)
+        let ns = code as NSString
+
+        let funcRange = ns.range(of: "func")
+        XCTAssertTrue(tokens.contains { $0.range == funcRange && $0.kind == .keyword },
+                       "expected a keyword token for 'func'")
+
+        let stringRange = ns.range(of: "\"Hello, \\(name)!\"")
+        XCTAssertTrue(tokens.contains { $0.range == stringRange && $0.kind == .string },
+                       "expected a string token spanning the whole string literal")
+
+        let commentRange = ns.range(of: "// say hello")
+        XCTAssertTrue(tokens.contains { $0.range == commentRange && $0.kind == .comment },
+                       "expected a comment token for the line comment")
+    }
+
+    func testJSONTokensCoverStringAndNumber() {
+        let json = [
+            "{",
+            "  \"name\": \"Copy\",",
+            "  \"version\": 7,",
+            "  \"features\": [\"clipboard\", \"sync\"]",
+            "}",
+        ].joined(separator: "\n")
+        let tokens = SyntaxHighlighter.tokens(for: json, language: .json)
+        let ns = json as NSString
+
+        let keyRange = ns.range(of: "\"name\"")
+        XCTAssertTrue(tokens.contains { $0.range == keyRange && $0.kind == .string },
+                       "expected a string token for the \"name\" key")
+
+        let numberRange = ns.range(of: "7")
+        XCTAssertTrue(tokens.contains { $0.range == numberRange && $0.kind == .number },
+                       "expected a number token for the version value")
+    }
+
+    func testTokensAreNonOverlappingAndSorted() {
+        let code = [
+            "func greet(name: String) -> String {",
+            "    let greeting = \"Hello, \\(name)!\"",
+            "    // say hello",
+            "    return greeting",
+            "}",
+        ].joined(separator: "\n")
+        let tokens = SyntaxHighlighter.tokens(for: code, language: .swift)
+
+        var previousEnd = 0
+        for token in tokens {
+            XCTAssertGreaterThanOrEqual(token.range.location, previousEnd,
+                                         "tokens must be sorted and non-overlapping")
+            previousEnd = token.range.location + token.range.length
+        }
+    }
+
+    func testUnknownLanguageProducesNoTokens() {
+        XCTAssertEqual(SyntaxHighlighter.tokens(for: "func foo() {}", language: .unknown), [])
+    }
+
+    func testEmptyTextProducesNoTokens() {
+        XCTAssertEqual(SyntaxHighlighter.tokens(for: "", language: .swift), [])
+    }
+}

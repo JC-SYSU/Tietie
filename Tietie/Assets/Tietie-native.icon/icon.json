@@ -1,0 +1,35 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "03-details.svg",
+          "name" : "03-details"
+        },
+        {
+          "image-name" : "02-front.svg",
+          "name" : "02-front"
+        },
+        {
+          "image-name" : "01-back.svg",
+          "name" : "01-back"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

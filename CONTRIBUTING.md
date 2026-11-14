@@ -1,36 +1,35 @@
-# Contributing to Copy
+# Contributing to 贴贴 (Tietie)
 
-Copy is built in the open and contributions are welcome. This page covers the two
-things worth knowing before you send a pull request: how to run the code, and the
-sign-off the CI expects on every commit.
+贴贴 is a fork of Copy, built in the open. This page covers the two things worth
+knowing before you send a pull request: how to run the code, and the sign-off the
+CI expects on every commit.
 
 ## Where to start
 
-- 🐛 [Open an issue](https://github.com/tarikbc/Copy/issues) for a bug or a
+- 🐛 [Open an issue](https://github.com/JC-SYSU/Tietie/issues) for a bug or a
   feature idea. A short screen recording beats a long description.
 - 🔧 Send a pull request. Small and focused lands faster than large and sweeping.
 
 ## Building and testing
 
 ```sh
-swift test --package-path CopyCore      # the engine and its test suite
-xcodegen generate                       # regenerate Copy.xcodeproj
-xcodebuild -project Copy.xcodeproj -scheme Copy -configuration Debug build
+swift test --package-path TietieCore      # the engine and its test suite
+xcodegen generate                       # regenerate Tietie.xcodeproj
+xcodebuild -project Tietie.xcodeproj -scheme Tietie -configuration Debug build
 ```
 
-The core engine lives in `CopyCore` and has its own tests. Please add or update
+The core engine lives in `TietieCore` and has its own tests. Please add or update
 tests for any engine change.
 
-`Copy.xcodeproj` is generated from `project.yml` and is not committed. If you run
-`swift test` before committing, check that `CopyCore/Package.resolved` still pins
-GRDB, KeyboardShortcuts, and Sparkle. The two tools disagree about that file and
-CI will tell you if a pin went missing.
+`Tietie.xcodeproj` is generated from `project.yml` and is not committed. If you run
+`swift test` before committing, check that `TietieCore/Package.resolved` still pins
+GRDB and KeyboardShortcuts. The two tools disagree about that file and CI will tell
+you if a pin went missing.
 
 ## House style
 
 The design language is deliberately quiet and native. No colored card stripes, no
-clutter, nothing that announces itself. The app keeps a macOS 14 floor, with
-newer-OS features behind availability checks.
+clutter, nothing that announces itself. The app targets macOS 26.
 
 ## Sign your commits off
 

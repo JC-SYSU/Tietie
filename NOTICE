@@ -1,11 +1,18 @@
 Copy
 Copyright (C) 2026 Tarik Caramanico
 
+Tietie — a fork of Copy
+Copyright (C) 2026 JC-SYSU
+Modified 2026-11-14: renamed to 贴贴 (Tietie), new bundle identifier
+cn.tietie.app, new app icon, independent storage directory and no upstream
+update feed.
+
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 3, as published by the
 Free Software Foundation. The full license text is in LICENSE.
 
 The upstream project lives at https://github.com/tarikbc/Copy.
+This fork lives at https://github.com/JC-SYSU/Tietie.
 
 
 ADDITIONAL TERMS UNDER SECTION 7 OF THE GNU GPL VERSION 3

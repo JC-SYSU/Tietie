@@ -1,0 +1,1128 @@
+import AppKit
+import ApplicationServices
+import TietieCore
+import KeyboardShortcuts
+import SwiftUI
+
+@MainActor
+final class AppCoordinator {
+    /// 关闭面板、切回目标 app 后, 等多久再发 ⌘V (原 0.15s)。关闭动画结束后才激活前一个
+    /// app, 这里只需等激活生效; 太短会让按键落到还没激活的窗口上。
+    static let pasteActivationDelay: TimeInterval = 0.1
+
+    let store: ItemStore
+    let pinboardStore: PinboardStore
+    let settings: SettingsStore
+    private let monitor: ClipboardMonitor
+    private let pasteService: PasteService
+    private let persistQueue = DispatchQueue(label: "cn.tietie.app.persist", qos: .utility)
+    private let saveErrors = SaveErrorReporter()
+    private var retentionTimer: DispatchSourceTimer?
+    /// 「限时保留」条目的到期删除。
+    private let expiryScheduler: ExpiryScheduler
+    private(set) var isPaused = false
+    /// True in a DEBUG build when the demo-mode flag is set (toggled from the status menu):
+    /// runs against an isolated, reseeded demo database with curated mock data, and never
+    /// starts clipboard capture. Always false in release. See `DemoData`.
+    let isDemoMode: Bool
+    /// `UserDefaults` key the status-menu toggle flips; read at launch to enter demo mode.
+    static let demoModeKey = "demoMode"
+    private(set) lazy var shelfViewModel = ShelfViewModel(store: store, pinboardStore: pinboardStore, settings: settings, linkFetcher: linkFetcher)
+    private(set) var linkFetcher: LinkMetadataFetcher
+    private(set) lazy var ocrController = OCRController(store: store)
+    private(set) lazy var archiveController = ArchiveController(store: store, pinboardStore: pinboardStore)
+
+    /// Assigned eagerly in `init()` (from a local, not `self.pasteStackModel`) so the
+    /// monitor's `onCapture` closure can capture it directly for the auto-enqueue-while-
+    /// active behavior — `self` isn't fully initialized yet at that point in `init()`,
+    /// but a plain local reference to this same instance is fine to capture. Its
+    /// `onActiveChange` handler is wired afterward, once `self` is safe to capture.
+    private let pasteStackModel: PasteStackModel
+    private lazy var pasteStackController = PasteStackController(
+        model: pasteStackModel,
+        hideDuringScreenSharing: settings.hideDuringScreenSharing,
+        theme: settings.shelfTheme)
+    private lazy var pasteStackEngine = PasteStackEngine(onIntercept: { [weak self] in
+        self?.pasteNextViaEngine()
+    })
+
+    /// How often the retention pruner re-runs while the app stays open.
+    private static let retentionInterval: TimeInterval = 12 * 60 * 60
+
+    /// The always-present SwiftUI host for the centered modal content (edit/create/color/
+    /// tips); shown in a child window by `ShelfPanelController.presentModal` when a modal
+    /// opens (driven by `shelfViewModel.onModalPresent`).
+    private lazy var modalHostView: NSView = NSHostingView(rootView: ShelfModalHostView(viewModel: shelfViewModel))
+
+    private lazy var shelfController: ShelfPanelController = {
+        let controller = ShelfPanelController(
+            hideDuringScreenSharing: settings.hideDuringScreenSharing,
+            compactShelf: settings.compactShelf,
+            theme: settings.shelfTheme,
+            floatingShelf: settings.floatingShelf) { [weak self] in
+            guard let self else { return NSView() }
+            let host = ShelfHostingView(rootView: ShelfRootView(viewModel: self.shelfViewModel))
+            // Drags onto the pinboard tabs (cards to file, tabs to reorder) are tracked by
+            // the host in AppKit and resolved against the tab frames the view model holds
+            // (see `ShelfHostingView`).
+            host.activeShelfDrag = { [weak self] in self?.shelfViewModel.activeShelfDrag }
+            host.onPageScroll = { [weak self] event in
+                self?.shelfViewModel.pageScroll(event)
+            }
+            host.onDragMoved = { [weak self] kind, point in
+                self?.shelfViewModel.shelfDragMoved(kind, to: point) ?? false
+            }
+            host.onDragExited = { [weak self] in
+                self?.shelfViewModel.shelfDragExited()
+                self?.shelfViewModel.cardDragLeftShelf()
+            }
+            host.onDragEnded = { [weak self] in self?.shelfViewModel.shelfDragEnded() }
+            host.onCardDrop = { [weak self] point, uuids in
+                self?.shelfViewModel.fileDroppedCards(uuids, at: point) ?? false
+            }
+            host.onPinboardDrop = { [weak self] point, id in
+                self?.shelfViewModel.moveDroppedPinboard(id, at: point) ?? false
+            }
+            // 卡片拖出: 正在改名的卡片不拖 (按住拖动是在选文字)。
+            host.cardAtPoint = { [weak self] point in
+                guard let viewModel = self?.shelfViewModel,
+                      let uuid = viewModel.cardSweep.cardUUID(at: point),
+                      viewModel.items.first(where: { $0.uuid == uuid })?.id != viewModel.inlineRenamingItemID
+                else { return nil }
+                return uuid
+            }
+            host.onBeginCardDrag = { [weak self, weak host] uuid, event in
+                guard let self, let host else { return }
+                self.beginCardDrag(uuid: uuid, event: event, from: host)
+            }
+            return host
+        }
+        controller.onDidHide = { [weak self] in
+            self?.shelfViewModel.clearTransientState()
+        }
+        // 卡片拖出面板: 面板缩回让出下面的输入框; 松手后清掉拖拽状态。
+        shelfViewModel.onRequestDragOutRetract = { [weak controller] in
+            controller?.retractForDragOut()
+        }
+        controller.onDragOutEnded = { [weak self] in
+            self?.shelfViewModel.shelfDragEnded()
+        }
+        controller.onShow = { [weak self] in
+            self?.shelfViewModel.prepareForShow()
+        }
+        controller.onScroll = { [weak self] event in
+            self?.shelfViewModel.pageScroll(event)
+        }
+        controller.onKeyEvent = { [weak self, weak controller] event in
+            guard let self, let controller else { return false }
+            let viewModel = self.shelfViewModel
+            // 按住 ⌘ 时按了数字以外的键 (⌘F、⌘⌫、⌘C…): 这是组合键, 不是在看编号,
+            // 收起编号舞台。放在最前面, 后面任何分支提前 return 都不影响。
+            // 18–29 是主键盘数字键 1–9、0 与 -、= 的 keyCode。
+            if event.modifierFlags.contains(.command),
+               !(18...29).contains(Int(event.keyCode)) {
+                viewModel.dismissNumberStage()
+            }
+            // While the edit/create/rename/adjust-color sheet — or an inline title
+            // rename field — is up, let its own view handle every key (arrows, space,
+            // escape, return) instead of the shelf's global shortcuts — this monitor is
+            // app-wide and fires before the sheet's/field's responder chain would see
+            // the event otherwise.
+            guard viewModel.editingItem == nil, !viewModel.pinboardPopoverShown,
+                  !viewModel.creatingItem, !viewModel.showingTips,
+                  viewModel.adjustingColorItem == nil,
+                  viewModel.inlineRenamingItemID == nil else { return false }
+            // IME composition (Chinese/Japanese/Korean input): while the field editor
+            // holds marked text, every key belongs to the input method — space and
+            // return commit the candidates, arrows page them. None of the shelf
+            // shortcuts below may fire, or space-selecting a candidate would toggle
+            // the preview and swallow the key instead of typing the word.
+            if let editor = event.window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+                return false
+            }
+            // Type-to-search: the search field isn't auto-focused, so a letter typed while
+            // browsing begins a search and moves focus into the field.
+            if !viewModel.isSearchFieldFocused,
+               event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+               let chars = event.charactersIgnoringModifiers, chars.count == 1,
+               let first = chars.first, first.isLetter {
+                viewModel.updateSearchText(viewModel.searchQuery.text + (event.characters ?? chars))
+                viewModel.focusSearchRequested = true
+                return true
+            }
+            // Smart-search dropdown: while it's open its keys drive the dropdown, not the
+            // cards. Backspace on an empty field removes the last pill (dropdown open or not).
+            if viewModel.suggestionsVisible {
+                switch event.keyCode {
+                case 125: viewModel.moveSuggestion(by: 1); return true   // down
+                case 126: viewModel.moveSuggestion(by: -1); return true  // up
+                case 36, 48: viewModel.acceptHighlightedSuggestion(); return true  // return / tab
+                case 53: viewModel.dismissSuggestions(); return true     // escape closes the dropdown
+                default: break
+                }
+            }
+            if event.keyCode == 51,
+               viewModel.searchQuery.text.isEmpty, !viewModel.searchQuery.tokens.isEmpty {
+                viewModel.removeLastToken()
+                return true
+            }
+            // ⌘F focuses the search field (caret at the end), so search is reachable
+            // without typing a letter first.
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "f" {
+                viewModel.focusSearchRequested = true
+                return true
+            }
+            // ⌥1 → history tab, ⌥2...⌥9 → nth pinboard. Checked before keyCode routing
+            // so the digit keys never fall through to other handlers.
+            if event.modifierFlags.contains(.option),
+               let chars = event.charactersIgnoringModifiers, chars.count == 1,
+               let digit = chars.first, let digitValue = digit.wholeNumberValue,
+               (1...9).contains(digitValue) {
+                if digitValue == 1 {
+                    viewModel.selectTab(.history)
+                } else {
+                    let index = digitValue - 2
+                    if viewModel.pinboards.indices.contains(index), let id = viewModel.pinboards[index].id {
+                        viewModel.selectTab(.pinboard(id))
+                    }
+                }
+                return true
+            }
+            // ⌘-digit 1-9 pastes the Nth visible card directly. It's on Command (not a bare
+            // digit) so plain numbers type into the always-focused search field; holding
+            // Command reveals the paste number on each card (`commandHeld`). ⌥-digit tab
+            // switching is handled above and returns before here, so it never collides.
+            let allowsDigitQuickPaste = event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.option)
+                && !event.modifierFlags.contains(.control)
+            // 编号按当前页数: ⌘1 是这一页的第一张, 与卡片上亮出的编号一致。
+            let pasteVisible: (Int) -> Void = { offset in
+                let index = viewModel.pageStartIndex + offset
+                guard viewModel.items.indices.contains(index) else { return }
+                viewModel.requestPaste(viewModel.items[index], plain: false)
+            }
+
+            // Ignore caps lock and device-specific flags when matching shortcuts, but
+            // keep Shift/Option/Control significant so e.g. the ⇧⌘V plain-text hotkey
+            // never falls through to the plain ⌘V paste action below.
+            let shortcutModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            switch event.keyCode {
+            case 123: // left arrow
+                viewModel.moveSelection(-1)
+                return true
+            case 124: // right arrow
+                viewModel.moveSelection(1)
+                return true
+            case 53: // escape
+                if viewModel.previewShown {
+                    viewModel.previewShown = false
+                } else if !viewModel.searchQuery.isEmpty {
+                    viewModel.clearSearch()
+                } else {
+                    controller.hide(restoreFocus: true)
+                }
+                return true
+            case 36: // return
+                viewModel.pasteSelection(plain: !event.modifierFlags.intersection([.option, .shift]).isEmpty)
+                return true
+            // Both guard on an empty search field. The shelf keeps that field focused at
+            // all times (see the ⌘-digit note above), so an unguarded ⌘V would take the
+            // one key a screener needs to paste a search term in, and an unguarded ⌘C
+            // would take copying it back out. With text in the field these fall to
+            // `default` and the field handles them, exactly as Backspace does below.
+            case 8 where shortcutModifiers == .command
+                && viewModel.searchQuery.text.isEmpty: // cmd-C — copy the selection
+                if viewModel.copySelection() {
+                    controller.hide(restoreFocus: true)
+                }
+                return true
+            case 9 where shortcutModifiers == .command
+                && viewModel.searchQuery.text.isEmpty: // cmd-V — paste the selection
+                viewModel.pasteSelection(plain: false)
+                return true
+            case 51 where event.modifierFlags.contains(.command): // cmd-backspace — delete selected card
+                // 删除可见列表里选中的卡片, 筛选保持不动 (deleteSelection 自己会刷新
+                // 查询)。选中不在可见列表时 (刚输入筛选、旧选中被筛掉) 屏幕上没有可
+                // 删除的目标, 退回清除筛选——旧选中随之重新可见。
+                if viewModel.primaryItem != nil {
+                    viewModel.deleteSelection()
+                } else {
+                    viewModel.clearSearch()
+                }
+                return true
+            case 14 where event.modifierFlags.contains(.command): // cmd-E — edit primary item
+                viewModel.beginEdit()
+                return true
+            case 15 where event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.shift)
+                && !event.modifierFlags.contains(.option): // cmd-R — inline-rename primary item
+                if let item = viewModel.primaryItem {
+                    viewModel.beginInlineRename(item)
+                }
+                return true
+            case 45 where event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.shift)
+                && !event.modifierFlags.contains(.option): // cmd-N — new item
+                viewModel.beginCreate()
+                return true
+            case 31 where event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.shift)
+                && !event.modifierFlags.contains(.option): // cmd-O — open selected link/file
+                viewModel.openSelected()
+                return true
+            case 6 where event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.shift): // cmd-Z — undo last delete/removal
+                viewModel.undoLast()
+                return true
+            case 5 where event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.shift)
+                && !event.modifierFlags.contains(.option): // cmd-G — show selected item in history
+                let onPinboard = { if case .pinboard = viewModel.tab { return true } else { return false } }()
+                if (!viewModel.searchQuery.isEmpty || onPinboard), let item = viewModel.primaryItem {
+                    viewModel.showInHistory(item)
+                }
+                return true
+            // Space previews when the search field is NOT focused — browse mode, or a
+            // search whose results the user stepped into (clicking a card leaves the
+            // field). While the field holds focus, space belongs to it: a literal
+            // space, or the IME's candidate commit (the marked-text guard above lets
+            // that key pass before this routing runs).
+            case 49 where !viewModel.isSearchFieldFocused:
+                viewModel.previewShown.toggle()
+                return true
+            case 18 where allowsDigitQuickPaste: // 1
+                pasteVisible(0)
+                return true
+            case 19 where allowsDigitQuickPaste: // 2
+                pasteVisible(1)
+                return true
+            case 20 where allowsDigitQuickPaste: // 3
+                pasteVisible(2)
+                return true
+            case 21 where allowsDigitQuickPaste: // 4
+                pasteVisible(3)
+                return true
+            case 23 where allowsDigitQuickPaste: // 5
+                pasteVisible(4)
+                return true
+            case 22 where allowsDigitQuickPaste: // 6
+                pasteVisible(5)
+                return true
+            case 26 where allowsDigitQuickPaste: // 7
+                pasteVisible(6)
+                return true
+            case 28 where allowsDigitQuickPaste: // 8
+                pasteVisible(7)
+                return true
+            case 25 where allowsDigitQuickPaste: // 9
+                pasteVisible(8)
+                return true
+            default:
+                return false
+            }
+        }
+        shelfViewModel.onPaste = { [weak self, weak controller] item, plain in
+            let paste: () -> Void = { [weak self] in
+                guard let self else { return }
+                self.pasteFromShelf(item, plainTextOnly: plain)
+            }
+            if let controller {
+                controller.hide(restoreFocus: true, fast: true, completion: paste)
+            } else {
+                paste()
+            }
+        }
+        shelfViewModel.onAddToPasteStack = { [weak self] item in
+            self?.addToPasteStack(item)
+        }
+        shelfViewModel.onOpenURL = { [weak controller] url in
+            if let controller {
+                controller.hide(restoreFocus: true) {
+                    NSWorkspace.shared.open(url)
+                }
+            } else {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        shelfViewModel.onCopyText = { [weak self] text in
+            self?.copyText(text)
+        }
+        shelfViewModel.onCopyItem = { [weak self] item in
+            self?.copyToClipboard(item) ?? false
+        }
+        shelfViewModel.onAdjustColorCopy = { [weak self] hex in
+            self?.adjustColorCopy(hex)
+        }
+        shelfViewModel.onModalPresent = { [weak self] active in
+            guard let self else { return }
+            if active {
+                self.shelfController.presentModal(self.modalHostView)
+            } else {
+                self.shelfController.dismissModal()
+            }
+        }
+        shelfViewModel.onNewItem = { [weak self] in
+            self?.newItem()
+        }
+        shelfViewModel.onTogglePasteStack = { [weak self] in
+            self?.togglePasteStack()
+        }
+        shelfViewModel.onTogglePrivacyMode = { [weak self] in
+            self?.togglePause()
+        }
+        shelfViewModel.onClearHistory = { [weak self] in
+            self?.confirmAndClearHistory()
+        }
+        shelfViewModel.onExportHistory = { [weak self] in
+            self?.exportHistory()
+        }
+        shelfViewModel.onImportHistory = { [weak self] in
+            self?.importHistory()
+        }
+        shelfViewModel.onOpenSettings = { [weak self] in
+            self?.openSettings()
+        }
+        shelfViewModel.onPasteMultiple = { [weak self, weak controller] joined in
+            let paste = { [weak self] in
+                guard let self else { return }
+                self.pasteService.place(
+                    [CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(joined.utf8))],
+                    plainTextOnly: false)
+                guard AXIsProcessTrusted() else {
+                    HUD.show("Press ⌘V to paste")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.pasteActivationDelay) { [pasteService = self.pasteService] in
+                    pasteService.sendPasteKeystroke()
+                }
+            }
+            if let controller {
+                controller.hide(restoreFocus: true, fast: true, completion: paste)
+            } else {
+                paste()
+            }
+        }
+        controller.onFlagsChanged = { [weak self] event in
+            self?.shelfViewModel.commandHeld = event.modifierFlags.contains(.command)
+            self?.shelfViewModel.optionHeld = event.modifierFlags.contains(.option)
+        }
+        // Clicking anywhere in the shelf outside an empty search field (a card, a tab,
+        // empty space) leaves the field, which hides its hint panel.
+        controller.onClickOutsideTextField = { [weak self] in
+            guard let viewModel = self?.shelfViewModel,
+                  viewModel.isSearchFieldFocused,
+                  viewModel.searchQuery.text.isEmpty else { return }
+            viewModel.endSearchEditingRequested = true
+        }
+        controller.onForceClick = { [weak self] in
+            // Force-click acts on the card under the cursor: editable kinds (text/rich
+            // text/link) open the editor, everything else opens the preview. The click's
+            // own mouse-up hasn't resolved yet, so select the card here and set the
+            // suppress-paste guard so the release doesn't then paste it.
+            guard let self, let uuid = self.shelfViewModel.hoveredItemID,
+                  let item = self.shelfViewModel.items.first(where: { $0.uuid == uuid }) else { return }
+            self.shelfViewModel.selection.click(uuid)
+            self.shelfViewModel.suppressNextCardPaste = true
+            switch item.kind {
+            case .text, .richText, .link:
+                self.shelfViewModel.beginEdit(item)
+            case .image, .file, .color:
+                self.shelfViewModel.previewShown = true
+            }
+        }
+        return controller
+    }()
+
+    private lazy var settingsWindowController = SettingsWindowController(settings: settings, store: store)
+    private lazy var onboardingWindowController = OnboardingWindowController()
+
+    init() throws {
+        #if DEBUG
+        let isDemo = UserDefaults.standard.bool(forKey: Self.demoModeKey)
+        #else
+        let isDemo = false
+        #endif
+        self.isDemoMode = isDemo
+        let database = try isDemo ? Self.makeDemoDatabase() : DatabaseManager.makeDefault()
+        let blobs = BlobStore(directory: database.blobsDirectory)
+        let store = ItemStore(writer: database.writer, blobs: blobs,
+                              images: ImageFileStore(directory: database.imagesDirectory))
+        self.store = store
+        // 命中摘要用的折叠表 (约 100ms, debug 构建), 后台建好; 建好前摘要走旧做法。
+        DispatchQueue.global(qos: .utility).async { SearchFoldTable.prepare() }
+        // 归一化规则或 macOS 版本变了时重算搜索文本 (见 SearchText.stamp)。放在持久化队列
+        // 上, 与捕获写入串行、不卡启动; 平时戳一致, 只读一行就返回。
+        persistQueue.async {
+            do {
+                let changed = try database.refreshSearchTextIfNeeded()
+                if changed > 0 { NSLog("Tietie: refreshed search text for \(changed) items") }
+            } catch {
+                NSLog("Tietie: search text refresh failed: \(error)")
+            }
+            // 图片条目搬成图片文件 (v6 之前存在 blob 里), 再清掉没人引用的图片文件。
+            // 都在持久化队列上, 与捕获写入串行; 平时没有要搬的, 只读一次库就返回。
+            do {
+                let migrated = try store.migrateImagesToFiles()
+                if migrated > 0 { NSLog("Tietie: moved \(migrated) images to files") }
+                let swept = try store.sweepOrphanImageFiles()
+                if swept > 0 { NSLog("Tietie: removed \(swept) unreferenced image files") }
+            } catch {
+                NSLog("Tietie: image file maintenance failed: \(error)")
+            }
+        }
+        let pinboardStore = PinboardStore(writer: database.writer)
+        self.pinboardStore = pinboardStore
+        self.pasteService = PasteService(pasteboard: NSPasteboard.general,
+                                         keyPoster: CGKeyEventPoster())
+        let pasteStackModel = PasteStackModel(store: store)
+        self.pasteStackModel = pasteStackModel
+        if isDemo {
+            DemoData.seed(store: store, pinboards: pinboardStore, pasteStack: pasteStackModel)
+        }
+        let settings = SettingsStore()
+        self.settings = settings
+        let linkFetcher = LinkMetadataFetcher(store: store)
+        let ocrController = OCRController(store: store)
+        let reporter = saveErrors
+        let expiryScheduler = ExpiryScheduler(store: store, queue: persistQueue)
+        self.expiryScheduler = expiryScheduler
+        self.monitor = ClipboardMonitor(
+            pasteboard: NSPasteboard.general,
+            rewriter: NSPasteboard.general,
+            rules: RulesEngine(rules: settings.captureRules),
+            frontmostApp: {
+                let app = NSWorkspace.shared.frontmostApplication
+                return (app?.bundleIdentifier, app?.localizedName)
+            },
+            onCapture: { [persistQueue, linkFetcher, ocrController, settings, pasteStackModel, expiryScheduler] captured in
+                persistQueue.async {
+                    do {
+                        let saved = try store.save(captured)
+                        DispatchQueue.main.async {
+                            if let due = saved.expiresAt { expiryScheduler.schedule(at: due) }
+                            linkFetcher.fetchIfNeeded(for: saved, enabled: settings.fetchLinkPreviews)
+                            ocrController.recognizeIfNeeded(for: saved, enabled: settings.recognizeImageText)
+                            // While the stack is active, new copies join the queue too —
+                            // "copying while the stack is active" enqueues automatically.
+                            if pasteStackModel.isActive {
+                                pasteStackModel.enqueue(saved)
+                            }
+                            // Already on the main queue; hop into main-actor isolation for
+                            // the one-time activation nudges (see the methods).
+                            MainActor.assumeIsolated {
+                                CopySoundPlayer.shared.play(settings.copySound)
+                                AppCoordinator.showFirstCopyCoachIfNeeded()
+                                if !pasteStackModel.isActive {
+                                    AppCoordinator.notePasteStackOpportunity()
+                                }
+                            }
+                        }
+                    } catch {
+                        reporter.report(error)
+                    }
+                }
+            }
+        )
+        self.linkFetcher = linkFetcher
+        self.ocrController = ocrController
+        monitor.rewritesSystemClipboard = settings.trailingNewlineScope == .systemClipboard
+        settings.onTrailingNewlineScopeChange = { [weak self] scope in
+            self?.monitor.rewritesSystemClipboard = scope == .systemClipboard
+        }
+        settings.onRulesChange = { [weak self] rules in
+            self?.monitor.rules = RulesEngine(rules: rules)
+        }
+        // 判定在主队列上产生 (监控的定时器跑在主队列), 直接记计数。
+        monitor.onVerdict = { [settings] verdict in
+            MainActor.assumeIsolated {
+                if let rule = verdict.decidedBy { settings.recordRuleHit(rule) }
+            }
+        }
+        settings.onExpiryScheduleChange = { [expiryScheduler] in expiryScheduler.purgeNow() }
+        settings.onHideDuringScreenSharingChange = { [weak self] hide in
+            self?.shelfController.setHideDuringScreenSharing(hide)
+            self?.pasteStackController.setHideDuringScreenSharing(hide)
+        }
+        settings.onFloatingShelfChange = { [weak self] floating in
+            self?.shelfController.setFloatingShelf(floating)
+        }
+        settings.onFavoritesEnabledChange = { [weak self] _ in
+            self?.shelfViewModel.favoritesSettingChanged()
+        }
+        shelfController.panelFontSize = settings.panelFontSize
+        settings.onPanelFontSizeChange = { [weak self] size in
+            self?.shelfController.setPanelFontSize(size)
+        }
+        settings.onCompactShelfChange = { [weak self] compact in
+            self?.shelfController.setCompactShelf(compact)
+        }
+        settings.onShelfThemeChange = { [weak self] theme in
+            self?.shelfController.setTheme(theme)
+            self?.pasteStackController.setTheme(theme)
+            self?.settingsWindowController.setTheme(theme)
+        }
+        settings.onShowOnboarding = { [weak self] in
+            self?.showOnboarding()
+        }
+        // `self` is fully initialized past this point, so it's safe to capture weakly
+        // in `onActiveChange` — the single fan-out point for palette visibility AND
+        // engine activation, so the two can never drift out of lockstep (see the
+        // `pasteStackModel` doc comment above).
+        pasteStackModel.onActiveChange = { [weak self] isActive in
+            guard let self else { return }
+            self.pasteStackController.syncVisibility(to: isActive)
+            self.shelfViewModel.isPasteStackOn = isActive
+            if isActive {
+                let tapCreated = self.pasteStackEngine.activate()
+                NSLog("Tietie: Paste Stack tap \(tapCreated ? "activated" : "could not be created, falling back to hotkey")")
+                if !tapCreated {
+                    KeyboardShortcuts.enable(.pasteNextFromStack)
+                    HUD.show("Use Control Option Command N to paste the next item")
+                }
+            } else {
+                self.pasteStackEngine.deactivate()
+                KeyboardShortcuts.disable(.pasteNextFromStack)
+            }
+        }
+    }
+
+    func start() {
+        // Demo mode never captures the real clipboard (keeps the curated set pristine) and
+        // never prunes (its timestamps are backdated for the Time facets).
+        guard !isDemoMode else { return }
+        monitor.start()
+        runRetentionPrune()
+        scheduleRetentionTimer()
+        expiryScheduler.purgeNow()
+    }
+
+    /// Isolated, reset-every-launch demo database beside the real `Tietie/copy.sqlite`, so
+    /// `--demo` never touches real history.
+    private static func makeDemoDatabase() throws -> DatabaseManager {
+        let demoDir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Tietie/DemoData", isDirectory: true)
+        try? FileManager.default.removeItem(at: demoDir)
+        return try DatabaseManager(directory: demoDir)
+    }
+
+    /// The one unguided moment in the whole journey: a fresh user has just copied their
+    /// very first thing but has no reason to know the shelf exists yet. Nudge them, once,
+    /// to summon it, using their actual hotkey. Static (not instance) because the capture
+    /// closure that fires it escapes to a background thread and can't hold `self`; gated so
+    /// it never fires before onboarding and never repeats.
+    private static func showFirstCopyCoachIfNeeded() {
+        let defaults = UserDefaults.standard
+        let seenKey = "hasSeenFirstCopyCoach"
+        guard defaults.bool(forKey: "hasOnboarded"),
+              !defaults.bool(forKey: seenKey) else { return }
+        defaults.set(true, forKey: seenKey)
+        let hotkey = KeyboardShortcuts.getShortcut(for: .toggleShelf)?.description ?? "⌥⌘V"
+        HUD.show("Saved to 贴贴. Press \(hotkey) to open it.", duration: 2.8)
+    }
+
+    /// Tracks recent capture times; when an established user copies several things in
+    /// quick succession (exactly when a paste stack would help) and hasn't met the
+    /// feature yet, introduce it, once. Gated behind the first-copy coach so a brand-new
+    /// user copying a fast burst isn't double-nagged.
+    private static var recentCaptureTimes: [Date] = []
+    private static func notePasteStackOpportunity() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: "hasSeenFirstCopyCoach"),
+              !defaults.bool(forKey: "hasSeenPasteStackHint") else { return }
+        let now = Date()
+        recentCaptureTimes.append(now)
+        recentCaptureTimes = recentCaptureTimes.filter { now.timeIntervalSince($0) < 10 }
+        guard recentCaptureTimes.count >= 3 else { return }
+        defaults.set(true, forKey: "hasSeenPasteStackHint")
+        if let hotkey = KeyboardShortcuts.getShortcut(for: .togglePasteStack)?.description {
+            HUD.show("Collecting a few things? Press \(hotkey) for the paste stack.", duration: 3.0)
+        } else {
+            HUD.show("Collecting a few things? Open the paste stack from the shelf's top-right button.", duration: 3.0)
+        }
+    }
+
+    /// Prunes items past the configured retention window on the persist queue,
+    /// always sparing favorites and pinboard members (`ItemStore.prune` invariant).
+    private func runRetentionPrune() {
+        let cutoff = settings.retention.cutoff
+        let store = self.store
+        persistQueue.async {
+            do {
+                let deleted = try store.prune(olderThan: cutoff, maxItems: nil)
+                if deleted > 0 {
+                    NSLog("Tietie: retention pruning removed \(deleted) item(s)")
+                }
+            } catch {
+                NSLog("Tietie: retention pruning failed: \(error)")
+            }
+        }
+    }
+
+    private func scheduleRetentionTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + Self.retentionInterval, repeating: Self.retentionInterval)
+        timer.setEventHandler { [weak self] in self?.runRetentionPrune() }
+        timer.resume()
+        retentionTimer = timer
+    }
+
+    /// Shows the Settings window (see `SettingsWindowController` for why this is a
+    /// window we manage directly instead of going through SwiftUI's `Settings` scene).
+    func openSettings() {
+        settingsWindowController.show()
+    }
+
+    /// Shows the first-run welcome flow. `AppDelegate` calls this once at launch,
+    /// gated on the `"hasOnboarded"` UserDefaults flag that `OnboardingView.finish()`
+    /// sets on its last step.
+    func showOnboarding() {
+        onboardingWindowController.show()
+    }
+
+    /// 本次运行是否已经弹过辅助功能权限提示。用户点「稍后」后不再打扰,重启后再提示。
+    private var didPresentAccessibilityAlert = false
+
+    /// 面板显示前检查辅助功能权限,未授权时弹独立窗口。
+    ///
+    /// 这条提示原本是面板顶部的一条横幅,会占掉一层高度,把搜索栏和卡片整体往下
+    /// 推。独立窗口不参与面板布局,卡片位置保持不变。
+    /// 返回 true 表示用户选择去系统设置,调用方不应再显示面板。
+    @discardableResult
+    private func presentAccessibilityAlertIfNeeded() -> Bool {
+        guard !didPresentAccessibilityAlert, !shelfViewModel.accessibilityTrusted else { return false }
+        didPresentAccessibilityAlert = true
+
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Tietie needs Accessibility access to paste.")
+        alert.informativeText = String(
+            localized: "Without it, pasting only places the item on the clipboard. Turn on Tietie under Privacy & Security > Accessibility."
+        )
+        alert.addButton(withTitle: String(localized: "Open Settings"))
+        alert.addButton(withTitle: String(localized: "Later"))
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+        return true
+    }
+
+    /// Refreshes the shelf's live permission state before showing it (not on hide) —
+    /// `shelfViewModel`/`shelfController` are both created once and reused for the
+    /// app's lifetime, so without this the check would only ever reflect whatever was
+    /// true the very first time the shelf ever appeared.
+    func toggleShelf() {
+        if !shelfController.isVisible {
+            shelfViewModel.refreshPermissionState()
+            if presentAccessibilityAlertIfNeeded() { return }
+        }
+        shelfController.toggle()
+    }
+
+    /// Opens the shelf (if not already open) and immediately shows `CreateItemSheet`,
+    /// for the status menu's "New Item…" action.
+    func newItem() {
+        if !shelfController.isVisible {
+            shelfViewModel.refreshPermissionState()
+            shelfController.show()
+        }
+        shelfViewModel.beginCreate()
+    }
+
+    func togglePause() {
+        isPaused.toggle()
+        monitor.isPaused = isPaused
+        shelfViewModel.isPrivacyModeOn = isPaused
+    }
+
+    func recentItems() -> [ClipItem] {
+        (try? store.recentItems(limit: 10)) ?? []
+    }
+
+    /// 卡片拖拽会话的来源 (只给「复制」, 会话结束时清掉拖拽状态)。
+    private lazy var cardDragSource: CardDragSource = {
+        let source = CardDragSource()
+        source.onEnded = { [weak self] in self?.shelfViewModel.shelfDragEnded() }
+        return source
+    }()
+
+    /// 从面板上开始拖卡片: 准备剪贴板内容, 渲染指针下的小标签, 开系统拖拽会话。
+    private func beginCardDrag(uuid: String, event: NSEvent, from host: NSView) {
+        let dragged = shelfViewModel.prepareCardDrag(uuid: uuid)
+        guard let first = dragged.first(where: { $0.uuid == uuid }) ?? dragged.first else { return }
+        let writers = shelfViewModel.dragPasteboardItems(for: dragged)
+        guard !writers.isEmpty else { return }
+        let image = dragChipImage(for: first, count: dragged.count, appearance: host.effectiveAppearance)
+        let point = host.convert(event.locationInWindow, from: nil)
+        let frame = NSRect(x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
+                           width: image.size.width, height: image.size.height)
+        let items = writers.enumerated().map { index, writer -> NSDraggingItem in
+            let item = NSDraggingItem(pasteboardWriter: writer)
+            // 只给第一个配图, 其余叠在下面 (多张图片时系统会显示数量)。
+            item.setDraggingFrame(frame, contents: index == 0 ? image : nil)
+            return item
+        }
+        let session = host.beginDraggingSession(with: items, event: event, source: cardDragSource)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+    }
+
+    private func dragChipImage(for item: ClipItem, count: Int, appearance: NSAppearance) -> NSImage {
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let renderer = ImageRenderer(content: CardDragChip(item: item, count: count)
+            .environment(\.colorScheme, isDark ? .dark : .light))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        return renderer.nsImage ?? NSImage(size: NSSize(width: 120, height: 30))
+    }
+
+    /// Pastes the single most-recent history item directly into the frontmost app,
+    /// without opening the shelf — the global "Quick Paste Latest" hotkey. Reuses
+    /// `pasteFromShelf`'s place-reps + accessibility ⌘V path (with its "Press ⌘V"
+    /// HUD fallback when Accessibility isn't granted).
+    func quickPasteLatest() {
+        guard let item = (try? store.recentItems(limit: 1))?.first else {
+            HUD.show("Nothing to paste")
+            return
+        }
+        pasteFromShelf(item, plainTextOnly: false)
+    }
+
+    /// ⇧⌘V: 把历史里最新的一条以纯文本粘贴到当前 app (只写 UTF-8 纯文本, 不带 RTF/HTML)。
+    /// 最新一条是图片时粘贴它的图片文件完整路径。只取最新那一条: 没有任何文本可粘 (如
+    /// 图片文件丢了) 时提示并停止, 不往回找更早的条目, 免得粘出意料之外的内容。
+    func pasteLatestPlainText() {
+        // 「从当前收藏夹粘贴」开启时，若当前激活的是某个收藏夹，就在该收藏夹里取最新。
+        var item: ClipItem?
+        if settings.pasteFromCurrentTab, case .pinboard(let id) = shelfViewModel.tab {
+            var filter = SearchFilter()
+            filter.pinboardIDs = [id]
+            item = (try? store.recentPage(filter: filter, limit: 1, favoritesFirst: false))?.first
+        }
+        item = item ?? (try? store.recentItems(limit: 1))?.first
+        guard let item else {
+            HUD.show("Nothing to paste")
+            return
+        }
+        guard let id = item.id,
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
+              reps.contains(where: { $0.uti == "public.utf8-plain-text" }) else {
+            HUD.show(String(localized: "The latest item has no text"))
+            return
+        }
+        let paste = { [weak self] in
+            guard let self else { return }
+            self.pasteService.place(reps, plainTextOnly: true)
+            try? self.store.touch(itemID: id)
+            guard AXIsProcessTrusted() else {
+                HUD.show("Press ⌘V to paste")
+                self.promptForAccessibility()
+                return
+            }
+            self.sendPasteAfterModifiersRelease()
+        }
+        // 面板开着时先收起并把焦点还给原 app, 否则 ⌘V 会落进面板的搜索框。
+        if shelfController.isVisible {
+            shelfController.hide(restoreFocus: true, fast: true, completion: paste)
+        } else {
+            paste()
+        }
+    }
+
+    /// 由全局快捷键触发时, 用户手指通常还按着 ⇧/⌥/⌃。这些实体修饰键会叠加到合成的 ⌘V 上:
+    /// 带着 ⇧ 就变成 ⇧⌘V, 不但不是普通粘贴, 还会再次触发本快捷键。所以先等这三个键松开
+    /// (⌘ 本身无所谓) 再发 ⌘V; 1.5 秒还没松开就放弃, 内容已在剪贴板上, 提示手动粘贴。
+    private func sendPasteAfterModifiersRelease() {
+        let blocking: CGEventFlags = [.maskShift, .maskAlternate, .maskControl]
+        Task { @MainActor [pasteService] in
+            try? await Task.sleep(for: .milliseconds(150))
+            let deadline = Date().addingTimeInterval(1.5)
+            while !CGEventSource.flagsState(.combinedSessionState).intersection(blocking).isEmpty {
+                guard Date() < deadline else {
+                    HUD.show("Press ⌘V to paste")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            pasteService.sendPasteKeystroke()
+        }
+    }
+
+    /// Advances the shelf's active tab to the next pinboard (History → first pinboard
+    /// → ... → wraps back to History) — the global "Next Pinboard" hotkey. If the shelf
+    /// isn't open yet, this opens it (landing on History) rather than cycling blind;
+    /// the user presses the hotkey again to actually advance once the shelf is visible.
+    func selectNextPinboard() {
+        guard shelfController.isVisible else {
+            shelfViewModel.refreshPermissionState()
+            shelfController.show()
+            return
+        }
+        let pinboards = shelfViewModel.pinboards
+        switch shelfViewModel.tab {
+        case .history:
+            if let first = pinboards.first, let id = first.id {
+                shelfViewModel.selectTab(.pinboard(id))
+            }
+        case .pinboard(let currentID):
+            let nextIndex = (pinboards.firstIndex(where: { $0.id == currentID }) ?? -1) + 1
+            if pinboards.indices.contains(nextIndex), let id = pinboards[nextIndex].id {
+                shelfViewModel.selectTab(.pinboard(id))
+            } else {
+                shelfViewModel.selectTab(.history)
+            }
+        }
+    }
+
+    /// Enqueues `item` into the Paste Stack (activating the palette if it wasn't
+    /// already) from the card context menu's "Add to Paste Stack" action. The palette
+    /// re-fits its own size to the new row via `PasteStackView.onContentChange`, so
+    /// there's no need to poke the controller directly here.
+    func addToPasteStack(_ item: ClipItem) {
+        pasteStackModel.enqueue(item)
+        HUD.show("Added to Paste Stack")
+    }
+
+    /// Places one shelf card on the system clipboard without synthesizing a paste. The
+    /// self marker keeps the monitor from ingesting a duplicate; touching the existing
+    /// item makes it the current entry in history too. Returns whether the caller should
+    /// close the shelf after the copy completed successfully.
+    @discardableResult
+    func copyToClipboard(_ item: ClipItem) -> Bool {
+        guard let id = item.id,
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
+              !reps.isEmpty else {
+            HUD.show("Item unavailable")
+            return false
+        }
+        pasteService.place(reps, plainTextOnly: false)
+        try? store.touch(itemID: id)
+        // The monitor ignores our own marked write, so the capture path below never
+        // sees this copy and the feedback has to be asked for here.
+        CopySoundPlayer.shared.play(settings.copySound)
+        return true
+    }
+
+    /// Places OCR-recognized text from an image card's "Copy Text" action on the
+    /// clipboard (marked self-paste). This is a plain copy, not a paste-in-place — no
+    /// keystroke is synthesized, matching `onPasteMultiple`'s "place only" behavior,
+    /// since the user asked to copy the text, not paste it.
+    func copyText(_ text: String) {
+        pasteService.place(
+            [CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(text.utf8))],
+            plainTextOnly: false)
+        HUD.show("Text copied")
+    }
+
+    /// Places a tweaked color from `ColorAdjustSheet`'s "Copy" button on the clipboard
+    /// (marked self-paste). Writes a real `NSKeyedArchiver`-archived `NSColor` under
+    /// `colorType` — the shape real color wells (Pages/Keynote/Sketch/`NSColorPanel`)
+    /// expect, and what `PasteboardReading.colorHex()` actually decodes via
+    /// `readObjects(forClasses: [NSColor.self])` — plus a plain-text hex rep for apps
+    /// that only read text. Does not mutate the source item's stored hex.
+    func adjustColorCopy(_ hex: String) {
+        var reps = [CapturedRepresentation(uti: "public.utf8-plain-text", data: Data(hex.utf8))]
+        let picked = NSColor(Tokens.color(fromHex: hex))
+        let srgb = picked.usingColorSpace(.sRGB) ?? picked
+        do {
+            let colorData = try NSKeyedArchiver.archivedData(withRootObject: srgb, requiringSecureCoding: true)
+            reps.insert(CapturedRepresentation(uti: CopyPasteboard.colorType, data: colorData), at: 0)
+        } catch {
+            NSLog("Tietie: failed to archive adjusted color, placing hex text only: \(error)")
+        }
+        pasteService.place(reps, plainTextOnly: false)
+        HUD.show("Color copied")
+    }
+
+    /// Whether the Paste Stack palette/engine are currently active — read by
+    /// `AppDelegate` to reflect a checkmark on the "Paste Stack" menu item.
+    var isPasteStackActive: Bool { pasteStackModel.isActive }
+
+    /// Flips the Paste Stack on or off. All activation/deactivation — the palette, the
+    /// CGEvent tap, and the `.pasteNextFromStack` fallback hotkey — fans out from
+    /// `pasteStackModel.isActive`'s `didSet`, wired to `onActiveChange` in `init()`.
+    func togglePasteStack() {
+        pasteStackModel.isActive.toggle()
+    }
+
+    /// Advances the queue and places the next item's representations on the
+    /// pasteboard, shared by both the engine-intercepted path and the
+    /// `.pasteNextFromStack` fallback hotkey. Returns `false` once the queue is
+    /// exhausted, having already deactivated the stack and shown the "finished" HUD.
+    @discardableResult
+    private func placeNextStackItem() -> Bool {
+        guard let reps = pasteStackModel.advanceAndResolve() else {
+            deactivatePasteStack()
+            HUD.show("Paste Stack finished")
+            return false
+        }
+        pasteService.place(reps, plainTextOnly: false)
+        return true
+    }
+
+    /// Called by `PasteStackEngine`'s `onIntercept` when the CGEvent tap swallows a
+    /// plain ⌘V. This path only runs with Accessibility granted (the tap itself
+    /// requires it), so after placing the item it's safe to re-synthesize a marked ⌘V
+    /// and have the frontmost app receive it automatically.
+    private func pasteNextViaEngine() {
+        guard placeNextStackItem() else { return }
+        Haptics.confirm()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            PasteStackEngine.postMarkedPasteKeystroke()
+        }
+    }
+
+    /// `.pasteNextFromStack` fallback hotkey handler — only reachable while the tap
+    /// couldn't be created (no Accessibility; see `pasteStackModel.onActiveChange`).
+    /// Without Accessibility we can't reliably synthesize a ⌘V ourselves (same reason
+    /// `pasteFromShelf`/`onPasteMultiple` gate `sendPasteKeystroke()` behind
+    /// `AXIsProcessTrusted()`), so this places the item and lets the user's own ⌘V —
+    /// which the OS delivers directly, no synthesis needed — do the actual pasting.
+    func pasteNextFromStack() {
+        guard placeNextStackItem() else { return }
+        Haptics.confirm()
+        HUD.show("Ready to paste. Press Command V.")
+    }
+
+    private func deactivatePasteStack() {
+        pasteStackModel.isActive = false
+    }
+
+    /// Called from `AppDelegate.applicationWillTerminate` so the event tap never
+    /// outlives the app process. `pasteStackEngine.deactivate()` is called directly
+    /// too, as a defensive no-op, in case the tap was ever active without
+    /// `pasteStackModel.isActive` reflecting it.
+    func applicationWillTerminate() {
+        deactivatePasteStack()
+        pasteStackEngine.deactivate()
+    }
+
+    func clearHistory() {
+        do {
+            try store.clearHistory(keepFavorites: true)
+        } catch {
+            NSLog("Tietie: failed to clear history: \(error)")
+        }
+    }
+
+    /// Confirms before clearing, shared by the status menu's "Clear History…" item
+    /// (`AppDelegate.clearHistory`) and the in-drawer menu's equivalent action
+    /// (`ShelfViewModel.onClearHistory`) so both paths use the exact same confirmation
+    /// copy and semantics — one implementation instead of two. The alert's window level
+    /// is bumped to `.statusBar`, matching `ShelfRootView`'s pinboard-delete confirm, so
+    /// it renders above the always-on-top shelf panel when triggered from there.
+    func confirmAndClearHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear clipboard history?"
+        alert.informativeText = "Favorites are kept. This cannot be undone."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.level = .statusBar
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            clearHistory()
+        }
+    }
+
+    /// "Export…" status-menu action — writes the full history and pinboards to a
+    /// user-chosen `.json` file via `ArchiveController`.
+    func exportHistory() {
+        archiveController.exportHistory()
+    }
+
+    /// "Import…" status-menu action — restores history and pinboards from a
+    /// user-chosen `.json` backup file via `ArchiveController`, deduping by content
+    /// hash so re-importing the same file never creates duplicates.
+    func importHistory() {
+        archiveController.importHistory()
+    }
+
+    /// Puts the item on the clipboard and pastes it into the frontmost app.
+    /// Without Accessibility, the item stays on the clipboard for a manual ⌘V.
+    func paste(_ item: ClipItem) {
+        pasteFromShelf(item, plainTextOnly: false)
+    }
+
+    func pasteFromShelf(_ item: ClipItem, plainTextOnly: Bool) {
+        guard let id = item.id,
+              let reps = try? store.pasteboardRepresentations(forItemID: id),
+              !reps.isEmpty else {
+            HUD.show("Item unavailable")
+            return
+        }
+        pasteService.place(reps, plainTextOnly: plainTextOnly)
+        try? store.touch(itemID: id)
+
+        guard AXIsProcessTrusted() else {
+            HUD.show("Press ⌘V to paste")
+            promptForAccessibility()
+            return
+        }
+        // Give app activation time to settle so the keystroke lands in the frontmost app.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pasteActivationDelay) { [pasteService] in
+            pasteService.sendPasteKeystroke()
+        }
+    }
+
+    private func promptForAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
+    }
+}
+
+/// 「限时保留」条目到期即删: 只挂一个一次性定时器, 指向最近一条的到期时间; 删完再
+/// 指向下一条。用墙钟时间 (wallDeadline), 合盖睡眠期间到期的条目在唤醒后马上删。
+/// 只在主线程上调用。删除在持久化队列上做, 与捕获写入串行。
+final class ExpiryScheduler {
+    private let store: ItemStore
+    private let queue: DispatchQueue
+    private var timer: DispatchSourceTimer?
+    private var scheduledFor: Date?
+
+    init(store: ItemStore, queue: DispatchQueue) {
+        self.store = store
+        self.queue = queue
+    }
+
+    /// 有一条新的到期时间。比当前挂着的更早才改挂。
+    func schedule(at date: Date) {
+        if let scheduledFor, scheduledFor <= date { return }
+        arm(at: date)
+    }
+
+    /// 立即删一次到期的, 再挂到下一条 (启动时、按规则清理历史后调用)。
+    func purgeNow() {
+        let store = self.store
+        queue.async {
+            do {
+                let result = try store.purgeExpired()
+                if result.deleted > 0 { NSLog("Tietie: removed \(result.deleted) expired item(s)") }
+                DispatchQueue.main.async { [weak self] in self?.rearm(result.nextExpiry) }
+            } catch {
+                NSLog("Tietie: expiry purge failed: \(error)")
+            }
+        }
+    }
+
+    private func rearm(_ next: Date?) {
+        timer?.cancel()
+        timer = nil
+        scheduledFor = nil
+        if let next { arm(at: next) }
+    }
+
+    private func arm(at date: Date) {
+        timer?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        // 多等 1 秒, 让到期时间严格早于删除时的「现在」。
+        let delay = max(0, date.timeIntervalSinceNow) + 1
+        t.schedule(wallDeadline: .now() + delay, leeway: .seconds(2))
+        t.setEventHandler { [weak self] in self?.purgeNow() }
+        t.resume()
+        timer = t
+        scheduledFor = date
+    }
+}

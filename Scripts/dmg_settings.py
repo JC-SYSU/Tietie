@@ -1,10 +1,10 @@
-# dmgbuild settings for Copy's DMG. dmgbuild writes the window layout + background
+# dmgbuild settings for 贴贴's DMG. dmgbuild writes the window layout + background
 # straight into the volume's .DS_Store (no Finder/AppleScript automation), so the
-# branded background and icon positions render reliably even on headless CI runners
-# (unlike create-dmg). Invoked by Scripts/release.sh, which substitutes the two
-# placeholders below before running dmgbuild.
+# background and icon positions render reliably even on headless CI runners
+# (unlike create-dmg). A release script substitutes the two placeholders below
+# before running dmgbuild.
 application = "APP_PATH_PLACEHOLDER"
-appname = "Copy.app"
+appname = "Tietie.app"
 
 # Compressed, read-only image (same format as the previous hdiutil UDZO output).
 format = "UDZO"

@@ -14,5 +14,5 @@
 - [ ] Every commit is signed off (`git commit -s`, or turn on the hook once with
       `git config core.hooksPath .githooks`). The DCO check enforces this. See
       [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md).
-- [ ] Engine changes come with tests (`swift test --package-path CopyCore`)
-- [ ] `CopyCore/Package.resolved` still pins GRDB, KeyboardShortcuts and Sparkle
+- [ ] Engine changes come with tests (`swift test --package-path TietieCore`)
+- [ ] `TietieCore/Package.resolved` still pins GRDB and KeyboardShortcuts
