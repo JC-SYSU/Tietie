@@ -1,6 +1,6 @@
-# Contributing to 贴贴 (Tietie)
+# Contributing to Tietie
 
-贴贴 is a fork of Copy, built in the open. This page covers the two things worth
+Tietie is a fork of Copy, built in the open. This page covers the two things worth
 knowing before you send a pull request: how to run the code, and the sign-off the
 CI expects on every commit.
 
