@@ -1,0 +1,89 @@
+{
+  "fill": "automatic",
+  "groups": [
+    {
+      "name": "Content \u00b7 three-color strip & text",
+      "layers": [
+        {
+          "image-name": "03-inlay.png",
+          "name": "03-inlay",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.05
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.02
+      }
+    },
+    {
+      "name": "Frosted glass \u00b7 front card",
+      "layers": [
+        {
+          "image-name": "02-front.png",
+          "name": "02-front"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.28
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.1
+      },
+      "blur-material": 0.7,
+      "specular": false,
+      "refractivity": {
+        "depth": 0,
+        "enabled": true,
+        "strength": 0.2
+      }
+    },
+    {
+      "name": "Iridescent glass \u00b7 rear card",
+      "layers": [
+        {
+          "image-name": "01-rear.png",
+          "name": "01-rear"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.24
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.04
+      },
+      "specular": false
+    },
+    {
+      "name": "Ambient color reflections",
+      "layers": [
+        {
+          "image-name": "00-ambient.svg",
+          "name": "Ambient color reflections",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  },
+  "features": [
+    "refractivity"
+  ]
+}
