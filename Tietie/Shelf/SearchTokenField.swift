@@ -124,7 +124,7 @@ private struct SearchPill: View {
         .padding(.leading, 6)
         .padding(.trailing, hovering ? 5 : 7)
         .padding(.vertical, 3)
-        .background(Capsule().fill(Color(nsColor: .quaternaryLabelColor).opacity(0.7)))
+        .background(Capsule(style: .continuous).fill(Color(nsColor: .quaternaryLabelColor).opacity(0.7)))
         .onHover { hovering = $0 }
     }
 }
@@ -219,5 +219,6 @@ private struct DropdownBackdrop: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.layer?.cornerRadius = cornerRadius
+        nsView.layer?.cornerCurve = .continuous
     }
 }

@@ -288,17 +288,14 @@ struct ItemCardView: View {
         return Color(nsColor: tint)
     }
 
-    /// 色带底: 上浅下深的竖向渐变 + 顶部 1pt 高光 + 底部 0.5pt 暗线, 让色带有一点
-    /// 受光的厚度, 和下方白色正文区分开。
+    /// 色带底: 上浅下深的竖向渐变 + 底部 0.5pt 暗线, 和下方白色正文区分开。
+    /// 顶部不再叠 1pt 高光线: 它在卡片圆角处被裁成一条浅边, 看起来像色带上沿空了一条。
     @ViewBuilder private var bandBackground: some View {
         if bandTint == nil {
             bandFill
         } else {
             LinearGradient(colors: [bandFill.blended(0.12, with: .white), bandFill.blended(0.06, with: .black)],
                            startPoint: .top, endPoint: .bottom)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.white.opacity(0.35)).frame(height: 1)
-                }
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(Color.black.opacity(0.12)).frame(height: 0.5)
                 }
@@ -1005,14 +1002,14 @@ struct CardDragChip: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor))
+                    .background(Capsule(style: .continuous).fill(Color.accentColor))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .frame(maxWidth: 240)
-        .background(Capsule().fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 1))
+        .background(Capsule(style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+        .overlay(Capsule(style: .continuous).stroke(Color.primary.opacity(0.15), lineWidth: 1))
         .padding(2)
     }
 

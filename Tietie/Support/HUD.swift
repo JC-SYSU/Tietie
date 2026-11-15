@@ -41,6 +41,7 @@ enum HUD {
         effect.state = .active
         effect.wantsLayer = true
         effect.layer?.cornerRadius = size.height / 2
+        effect.layer?.cornerCurve = .continuous
         effect.layer?.masksToBounds = true
         label.setFrameOrigin(NSPoint(x: hPad, y: vPad))
         effect.addSubview(label)

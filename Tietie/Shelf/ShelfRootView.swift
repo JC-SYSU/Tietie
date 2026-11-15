@@ -456,7 +456,7 @@ private struct TabPill: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 3)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(.quaternary))
+                    .background(Capsule(style: .continuous).fill(.quaternary))
                     .accessibilityHidden(true)
             }
         }
@@ -465,16 +465,16 @@ private struct TabPill: View {
         .padding(.horizontal, 8)
         .frame(height: 24)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(backgroundFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .stroke(isDropTargeted ? dropColor : .clear, lineWidth: 2)
         )
         .overlay(alignment: reorderIndicatorEdge == .trailing ? .trailing : .leading) {
             if reorderIndicatorEdge != nil {
-                Capsule()
+                Capsule(style: .continuous)
                     .fill(Color.accentColor)
                     .frame(width: 3, height: 20)
                     .offset(x: reorderIndicatorEdge == .trailing ? 3 : -3)

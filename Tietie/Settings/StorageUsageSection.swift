@@ -35,6 +35,7 @@ struct StorageUsageSection: View {
                 } label: {
                     Text(String(localized: "Clear History…"))
                 }
+                .buttonStyle(KleinButtonStyle())
                 .controlSize(.regular)
                 .padding(.top, 2)
             }
@@ -178,12 +179,13 @@ enum StorageCategory: String, CaseIterable, Identifiable, Hashable {
     }
 
     var color: Color {
+        // 克莱因蓝主色，配珊瑚、薄荷、琥珀、紫，呼应图标里的三色条。
         switch self {
-        case .text: return .blue
-        case .links: return .teal
-        case .images: return .orange
-        case .files: return .green
-        case .colors: return .purple
+        case .text: return SettingsTheme.klein
+        case .links: return Color(red: 0.18, green: 0.62, blue: 0.53)
+        case .images: return Color(red: 0.87, green: 0.42, blue: 0.36)
+        case .files: return Color(red: 0.76, green: 0.57, blue: 0.18)
+        case .colors: return Color(red: 0.48, green: 0.33, blue: 0.71)
         }
     }
 }
@@ -203,7 +205,7 @@ struct StackedBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .clipShape(Capsule())
-        .background(Capsule().fill(Color(nsColor: .quaternaryLabelColor).opacity(0.4)))
+        .clipShape(Capsule(style: .continuous))
+        .background(Capsule(style: .continuous).fill(Color(nsColor: .quaternaryLabelColor).opacity(0.4)))
     }
 }

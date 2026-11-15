@@ -397,3 +397,18 @@
 /* Settings sections */
 "Actions" = "操作";
 "Panel" = "面板";
+
+/* Settings window */
+"Settings" = "设置";
+"Tietie Settings" = "贴贴设置";
+"Language, appearance, startup and menu bar" = "语言、外观、启动与菜单栏";
+"Retention, candidate count and storage" = "保留时长、候选数量与存储占用";
+"Panel appearance and display behavior" = "面板外观与显示行为";
+"Copy, paste and card actions" = "复制、粘贴与卡片操作";
+"Capture rules and sensitive content" = "捕获规则与敏感内容";
+"Press keys…" = "按下快捷键…";
+"Set Shortcut" = "设置快捷键";
+"Clear" = "清除";
+"Shortcuts" = "快捷键";
+"Open the shelf, the paste stack and quick paste" = "打开面板、粘贴栈与快速粘贴";
+"Tietie %@ · Local-first clipboard shelf" = "贴贴 %@ · 本地优先的剪贴板面板";

@@ -2,6 +2,7 @@ import AppKit
 import TietieCore
 import KeyboardShortcuts
 import Quartz
+import SwiftUI
 
 extension KeyboardShortcuts.Name {
     /// 默认 ⌥⌘V: ⇧⌘V 让给 `pasteLatestPlainText`。只影响没存过这个快捷键的新配置。
@@ -132,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             func card(_ r: CGRect) -> CGPath {
-                CGPath(roundedRect: r, cornerWidth: 2.2, cornerHeight: 2.2, transform: nil)
+                Path(roundedRect: r, cornerRadius: 2.2, style: .continuous).cgPath
             }
             let back = CGRect(x: 7, y: 6.4, width: 8.2, height: 10.2)
             let front = CGRect(x: 2.8, y: 1.8, width: 8.2, height: 10.2)

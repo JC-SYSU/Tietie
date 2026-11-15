@@ -152,7 +152,8 @@ private struct GlassSurfaceModifier: ViewModifier {
             topLeadingRadius: corners.topLeading,
             bottomLeadingRadius: corners.bottomLeading,
             bottomTrailingRadius: corners.bottomTrailing,
-            topTrailingRadius: corners.topTrailing
+            topTrailingRadius: corners.topTrailing,
+            style: .continuous
         )
     }
 }
@@ -207,6 +208,7 @@ private struct VisualEffectMaterial: NSViewRepresentable {
         view.state = .active
         view.wantsLayer = true
         view.layer?.cornerRadius = corners.fallbackRadius
+        view.layer?.cornerCurve = .continuous
         view.layer?.maskedCorners = corners.maskedCorners
         view.layer?.masksToBounds = true
         view.layer?.addSublayer(overlay)
@@ -222,6 +224,7 @@ private struct VisualEffectMaterial: NSViewRepresentable {
             overlay.backgroundColor = tint?.cgColor
         }
         nsView.layer?.cornerRadius = corners.fallbackRadius
+        nsView.layer?.cornerCurve = .continuous
         nsView.layer?.maskedCorners = corners.maskedCorners
     }
 }

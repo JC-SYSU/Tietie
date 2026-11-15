@@ -9,10 +9,9 @@ struct PanelSettings: View {
             // ── 外观 ──────────────────────────────────────────────────
             SettingsRow(label: String(localized: "Material:"),
                         help: String(localized: "Liquid Glass needs macOS 26. With Reduce Transparency on, the panel always uses HUD Window.")) {
-                Picker("", selection: $settings.panelMaterial) {
-                    ForEach(PanelMaterial.allCases) { m in Text(m.title).tag(m) }
-                }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
+                KleinPopUp(options: PanelMaterial.allCases.map { ($0, $0.title) },
+                           selection: $settings.panelMaterial)
+                    .frame(width: 300)
             }
 
             SettingsRow(label: String(localized: "Tint:"),
@@ -49,26 +48,23 @@ struct PanelSettings: View {
             SettingsRow(label: String(localized: "Screen Sharing:"),
                         help: String(localized: "Keeps your clipboard history out of screenshots, screen recordings and shared screens.")) {
                 Toggle(String(localized: "Hide Tietie windows during screen sharing"), isOn: $settings.hideDuringScreenSharing)
-                    .toggleStyle(.checkbox)
             }
 
             SettingsRow(label: String(localized: "Remember Tab:"),
                         help: String(localized: "Keep the current pinboard tab when the panel is dismissed and reopened.")) {
                 Toggle(String(localized: "Remember the active pinboard"), isOn: $settings.rememberTab)
-                    .toggleStyle(.checkbox)
             }
 
             SettingsRow(label: String(localized: "Remember Filter:"),
                         help: String(localized: "Keep the search filters (tokens) across open/close. Any unfinished text being typed is cleared either way.")) {
                 Toggle(String(localized: "Remember the search filters"), isOn: $settings.rememberFilter)
-                    .toggleStyle(.checkbox)
             }
         }
     }
 
     private func labeledSlider(value: Binding<Double>, range: ClosedRange<Double>, step: Double, text: String) -> some View {
         HStack(spacing: 10) {
-            Slider(value: value, in: range, step: step).frame(width: 220)
+            KleinSlider(value: value, range: range, step: step).frame(width: 220)
             Text(verbatim: text)
                 .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(.secondary)

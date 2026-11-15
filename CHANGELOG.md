@@ -7,6 +7,25 @@ once the first release is cut.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.2] - 2026-11-15
+
+The settings window is rebuilt in Meetsee's style, and the app's custom controls now
+spell out macOS's continuous corner curve.
+
+### Added
+
+- A rebuilt Settings window: sidebar navigation, Klein-blue selection, custom
+  checkboxes, buttons, segmented controls, steppers and text fields, a shortcut
+  recorder, and a brand header that credits Copy.
+- Shortcuts have their own settings page.
+
+### Changed
+
+- Custom shapes across the app (cards, tabs, popovers, glass surfaces, the HUD, the
+  paste stack, and the menu bar icon) explicitly use continuous corners.
+- Card headers no longer draw a 1 pt white highlight along the top edge; each color
+  band now meets the card's top edge cleanly.
+
 ## [0.2.0] - 2026-10-01
 
 Your shelf, your way: light or dark, attached or floating, with a tap you can feel.

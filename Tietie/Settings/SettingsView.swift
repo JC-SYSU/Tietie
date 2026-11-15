@@ -1,8 +1,8 @@
 import TietieCore
 import SwiftUI
 
-/// 每个标签页的 SwiftUI 内容, 由 `SettingsWindowController` 分别装进 `NSTabViewController`
-/// 的子页面。窗口外观 (浅色/深色) 跟随 `SettingsStore.shelfTheme`, 强调色统一用品牌蓝。
+/// 每个标签页的 SwiftUI 内容，由 `SettingsWindowController` 分别装进独立宿主视图。
+/// 视觉沿用觅见：19pt 页标题 + 12pt 副标题，控件由 `SettingsControls.swift` 自绘。
 struct SettingsView: View {
     let section: SettingsSection
     let settings: SettingsStore
@@ -10,19 +10,21 @@ struct SettingsView: View {
 
     var body: some View {
         content
-            .tint(Tokens.electricBlue)
+            .tint(SettingsTheme.klein)
+            .toggleStyle(KleinCheckboxStyle())
+            .textFieldStyle(KleinTextFieldStyle())
     }
 
     @ViewBuilder private var content: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(section.title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .padding(.horizontal, 28)
-                    .padding(.top, 20)
-                    .padding(.bottom, 2)
+                SettingsPageHeader(title: section.title)
+                    .padding(.horizontal, SettingsLayout.paneInset)
+                    .padding(.top, 16)
+                    .padding(.bottom, 10)
                 switch section {
                 case .general:  GeneralSettings(settings: settings)
+                case .shortcuts: ShortcutsSettings(settings: settings)
                 case .history:  HistorySettings(settings: settings, store: store)
                 case .panel:    PanelSettings(settings: settings)
                 case .action:   ActionSettings(settings: settings)
@@ -33,5 +35,6 @@ struct SettingsView: View {
         }
         .frame(width: SettingsLayout.contentWidth)
         .frame(maxHeight: .infinity, alignment: .top)
+        .settingsCanvas()
     }
 }

@@ -17,12 +17,10 @@ struct HistorySettings: View {
 
             SettingsRow(label: String(localized: "Show:"),
                         help: String(localized: "Maximum number of items shown in the shelf at once.")) {
-                Picker("", selection: $settings.candidateLimit) {
-                    ForEach([10, 25, 50], id: \.self) { n in
-                        Text(String(format: String(localized: "%d cards"), n)).tag(n)
-                    }
-                }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
+                KleinSegmented(options: [10, 25, 50].map {
+                    ($0, String(format: String(localized: "%d cards"), $0))
+                }, selection: $settings.candidateLimit)
+                    .frame(width: 300)
             }
 
             SettingsDivider()

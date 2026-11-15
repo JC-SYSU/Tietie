@@ -7,7 +7,7 @@ import SwiftUI
 /// 每个标签页建一个独立的 NSHostingController，切换时 show/hide，不换 rootView，
 /// 避免 SwiftUI 异步重新 layout 导致 fittingSize 读取时机不准。
 @MainActor
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let settings: SettingsStore
     private let store: ItemStore
     private var selectedSection: SettingsSection = .general
@@ -24,9 +24,11 @@ final class SettingsWindowController: NSWindowController {
             contentRect: NSRect(x: 0, y: 0, width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
-        window.title = SettingsSection.general.title
+        window.title = String(localized: "Tietie Settings")
         window.isReleasedWhenClosed = false
+        window.level = .normal
         super.init(window: window)
+        window.delegate = self
         buildLayout()
         selectSection(.general, animated: false)
     }
@@ -37,6 +39,17 @@ final class SettingsWindowController: NSWindowController {
     private func buildLayout() {
         guard let window, let contentView = window.contentView else { return }
         window.appearance = settings.shelfTheme.appearance
+
+        // 画布：浅色用暖白，深色跟随系统窗口背景。
+        let canvas = NSHostingView(rootView: SettingsCanvasView())
+        canvas.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(canvas)
+        NSLayoutConstraint.activate([
+            canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
+            canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
 
         let sidebar = NSHostingView(rootView: SidebarView(
             selectedSection: selectedSection,
@@ -64,9 +77,9 @@ final class SettingsWindowController: NSWindowController {
             rule.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             rule.widthAnchor.constraint(equalToConstant: 1),
 
-            contentHost.leadingAnchor.constraint(equalTo: rule.trailingAnchor),
+            contentHost.leadingAnchor.constraint(equalTo: rule.trailingAnchor, constant: SettingsLayout.contentLeading),
             contentHost.topAnchor.constraint(equalTo: contentView.topAnchor),
-            contentHost.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            contentHost.widthAnchor.constraint(equalToConstant: SettingsLayout.contentWidth),
             contentHost.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
     }
@@ -76,7 +89,7 @@ final class SettingsWindowController: NSWindowController {
     func selectSection(_ section: SettingsSection, animated: Bool) {
         pageControllers[selectedSection]?.view.isHidden = true
         selectedSection = section
-        window?.title = section.title
+        window?.title = String(localized: "Tietie Settings")
 
         let hc: NSHostingController<SettingsView>
         if let existing = pageControllers[section] {
@@ -92,7 +105,6 @@ final class SettingsWindowController: NSWindowController {
                 hc.view.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
                 hc.view.topAnchor.constraint(equalTo: contentHost.topAnchor),
                 // 四边都钉住: 窗口高度固定, 页面占满内容区, 内容超出时由 ScrollView 滚动。
-                // 只钉三边时 sizingOptions = [] 让 view 高度为 0, 整页空白。
                 hc.view.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor),
             ])
             pageControllers[section] = hc
@@ -106,12 +118,32 @@ final class SettingsWindowController: NSWindowController {
     func setTheme(_ theme: ShelfTheme) { window?.appearance = theme.appearance }
 
     func show() {
+        // 打开设置时切到普通应用模式，Dock 里出现贴贴图标；关闭时恢复菜单栏模式。
+        NSApp.setActivationPolicy(.regular)
         if window?.isVisible != true {
             window?.setContentSize(NSSize(width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight))
             window?.center()
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        if NSApp.activationPolicy() == .regular {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
+
+// MARK: - 画布
+
+private struct SettingsCanvasView: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        (scheme == .dark ? SettingsTheme.canvasDark : SettingsTheme.canvasLight)
+            .ignoresSafeArea()
     }
 }
 
@@ -125,25 +157,25 @@ private struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tietie")
-                    .font(.system(size: 18, weight: .semibold))
-                Text("Clipboard shelf")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Text(String(localized: "Settings"))
+                    .font(.system(size: 20, weight: .bold))
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
-
-            Divider().padding(.horizontal, 8).padding(.bottom, 8)
+            .padding(.leading, 20)
+            .padding(.top, 26)
+            .padding(.bottom, 42)
 
             ForEach(SettingsSection.allCases) { section in
                 SidebarItem(section: section, isSelected: section == selectedSection,
                             onTap: { onSelect(section) })
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, SettingsTheme.sidebarItemSpacing)
             }
             Spacer(minLength: 0)
         }
-        .frame(width: SettingsLayout.sidebarWidth)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: SettingsLayout.sidebarWidth, alignment: .leading)
+        .background(Color.clear)
     }
 }
 
@@ -152,34 +184,40 @@ private struct SidebarItem: View {
     let isSelected: Bool
     let onTap: () -> Void
     @State private var hovered = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let accent = scheme == .dark ? SettingsTheme.kleinDark : SettingsTheme.klein
+        let selectedFill = scheme == .dark ? SettingsTheme.klein.opacity(0.30) : SettingsTheme.klein.opacity(0.10)
+
         Button(action: onTap) {
             HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(isSelected ? Color.accentColor : Color.clear)
-                    .frame(width: 3, height: 18)
-                    .padding(.leading, 8).padding(.trailing, 6)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(isSelected ? accent : Color.clear)
+                    .frame(width: 3, height: 16)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 13)
                 Image(systemName: section.systemImage)
                     .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .foregroundStyle(isSelected ? accent : Color.secondary)
                     .frame(width: 18)
+                    .padding(.trailing, 8)
                 Text(section.title)
                     .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Color.primary : Color(nsColor: .labelColor))
-                    .padding(.leading, 8)
+                    .foregroundStyle(isSelected
+                                     ? (scheme == .dark ? Color(nsColor: .labelColor) : SettingsTheme.bodyLight)
+                                     : Color.primary)
                 Spacer(minLength: 0)
             }
-            .frame(height: 36)
+            .frame(width: SettingsTheme.sidebarItemWidth, height: SettingsTheme.sidebarItemHeight)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.10)
-                          : (hovered ? Color.primary.opacity(0.05) : Color.clear))
-                    .padding(.horizontal, 6)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? selectedFill
+                          : (hovered ? Color.primary.opacity(0.06) : Color.clear))
             )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .padding(.horizontal, 2)
     }
 }

@@ -68,7 +68,7 @@ struct PasteStackView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color(nsColor: .quaternaryLabelColor).opacity(0.5)))
+                    .background(Capsule(style: .continuous).fill(Color(nsColor: .quaternaryLabelColor).opacity(0.5)))
             }
             Spacer(minLength: 8)
             if count > 0 {
@@ -258,7 +258,7 @@ private struct PasteStackRow: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                    .background(Capsule(style: .continuous).fill(Color.accentColor.opacity(0.14)))
             }
         }
         .padding(.horizontal, 10)

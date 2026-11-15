@@ -189,6 +189,7 @@ final class PasteStackController {
         effect.state = .active
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 12
+        effect.layer?.cornerCurve = .continuous
         effect.layer?.masksToBounds = true
         effect.translatesAutoresizingMaskIntoConstraints = false
 

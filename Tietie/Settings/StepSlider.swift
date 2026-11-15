@@ -10,7 +10,7 @@ import SwiftUI
 struct StepSlider: View {
     let labels: [String]
     @Binding var index: Int
-    var accent: Color = Tokens.electricBlue
+    var accent: Color = SettingsTheme.klein
 
     private let thumbSize: CGFloat = 20
     private let trackHeight: CGFloat = 4
@@ -83,7 +83,7 @@ struct StepSlider: View {
     }
 
     private func baseTrack(width: CGFloat, center: CGFloat) -> some View {
-        Capsule()
+        Capsule(style: .continuous)
             .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.7))
             .frame(width: width, height: trackHeight)
             .position(x: center, y: trackY)
@@ -91,7 +91,7 @@ struct StepSlider: View {
 
     private func filledTrack(inset: CGFloat, current: CGFloat) -> some View {
         let filled = max(current - inset, 0)
-        return Capsule()
+        return Capsule(style: .continuous)
             .fill(accent)
             .frame(width: filled, height: trackHeight)
             .position(x: inset + filled / 2, y: trackY)

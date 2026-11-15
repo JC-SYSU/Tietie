@@ -43,7 +43,7 @@ struct PrivacySettings: View {
 
 private enum RuleLayout {
     /// 列表控件的宽度 (右栏可用宽度约 400pt)。
-    static let listWidth: CGFloat = 392
+    static let listWidth: CGFloat = 534
 }
 
 extension ItemKind {
@@ -70,7 +70,7 @@ private struct KindChecklist: View {
                 Toggle(kind.ruleTitle, isOn: Binding(
                     get: { kinds.contains(kind) },
                     set: { on in if on { kinds.insert(kind) } else { kinds.remove(kind) } }))
-                .toggleStyle(.checkbox)
+                
             }
         }
     }
@@ -95,15 +95,12 @@ private struct ActionPicker: View {
     @Binding var action: RuleAction
 
     var body: some View {
-        Picker("", selection: $action) {
-            Text(String(localized: "Don't Save")).tag(RuleAction.drop)
-            ForEach(RuleAction.expireChoices, id: \.self) { m in
-                Text(String(format: String(localized: "Delete after %d min"), m)).tag(RuleAction.expire(minutes: m))
+        let options: [(RuleAction, String)] = [(RuleAction.drop, String(localized: "Don't Save"))]
+            + RuleAction.expireChoices.map { m in
+                (RuleAction.expire(minutes: m), String(format: String(localized: "Delete after %d min"), m))
             }
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .fixedSize()
+        KleinPopUp(options: options, selection: $action)
+            .frame(width: 176)
     }
 }
 
@@ -117,9 +114,10 @@ private struct NumberField: View {
         HStack(spacing: 4) {
             TextField("", value: Binding(get: { value }, set: { value = min(max($0, range.lowerBound), range.upperBound) }),
                       format: .number.grouping(.never))
+                .textFieldStyle(KleinTextFieldStyle())
                 .frame(width: 56)
                 .multilineTextAlignment(.trailing)
-            Stepper("", value: $value, in: range).labelsHidden()
+            KleinStepper(value: $value, range: range)
             Text(unit).foregroundStyle(.secondary)
         }
     }
@@ -158,9 +156,9 @@ private struct AppListEditor: View {
                     .listStyle(.bordered(alternatesRowBackgrounds: true))
                 }
             }
-            .frame(width: RuleLayout.listWidth, height: 104)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+            .frame(width: RuleLayout.listWidth, height: 140)
+            .background(Color.white.opacity(0.76))
+            .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
 
             ListButtonBar(add: addApp, remove: removeSelected, canRemove: selection != nil)
         }
@@ -192,20 +190,21 @@ private struct ListButtonBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: add) { Image(systemName: "plus").frame(width: 24, height: 20) }
+            Button(action: add) { Image(systemName: "plus") }
+                .buttonStyle(KleinIconButtonStyle())
                 .accessibilityLabel(String(localized: "Add"))
             if let remove {
                 Divider().frame(height: 14)
-                Button(action: remove) { Image(systemName: "minus").frame(width: 24, height: 20) }
+                Button(action: remove) { Image(systemName: "minus") }
+                    .buttonStyle(KleinIconButtonStyle())
                     .accessibilityLabel(String(localized: "Remove"))
                     .disabled(!canRemove)
             }
             Spacer()
         }
-        .buttonStyle(.borderless)
         .frame(width: RuleLayout.listWidth)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-        .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+        .background(Color.white.opacity(0.60))
+        .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
         .offset(y: -1)
     }
 }
@@ -239,8 +238,8 @@ private struct KeywordListEditor: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(width: RuleLayout.listWidth, height: 112)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+            .background(Color.white.opacity(0.76))
+            .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
 
             ListButtonBar(add: { rules.append(KeywordRule()) })
         }
@@ -268,13 +267,14 @@ private struct KeywordRow: View {
                     .font(rule.isRegex ? .system(size: 12, design: .monospaced) : .system(size: 12))
                     .frame(minWidth: 110)
                 Toggle(String(localized: "Regex"), isOn: $rule.isRegex)
-                    .toggleStyle(.checkbox)
+                    
                     .fixedSize()
                 if showsAction {
                     ActionPicker(action: $rule.action).controlSize(.small)
                 }
                 HitCount(count: count)
                 Button(action: remove) { Image(systemName: "minus.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
                     .buttonStyle(.borderless)
                     .accessibilityLabel(String(localized: "Remove"))
             }
@@ -300,7 +300,7 @@ private struct WhitelistRulesPage: View {
                                    settings.hitCount(.whitelistKind) + settings.hitCount(.whitelistApp) + settings.hitCount(.whitelistKeyword),
                                    String(localized: "%d items skipped so far."))) {
             Toggle(String(localized: "Only keep matching content"), isOn: $settings.captureRules.whitelist.enabled)
-                .toggleStyle(.checkbox)
+                
         }
         Group {
             SettingsRow(label: String(localized: "Types:"),
@@ -331,7 +331,7 @@ private struct BlacklistRulesPage: View {
         SettingsRow(label: String(localized: "Blacklist:"),
                     help: String(localized: "Content matching any rule is handled by that rule. Also turns sensitive content and size limits on or off.")) {
             Toggle(String(localized: "Exclude matching content"), isOn: $settings.captureRules.blacklist.enabled)
-                .toggleStyle(.checkbox)
+                
         }
         Group {
             SettingsRow(label: String(localized: "Types:"),
@@ -401,7 +401,7 @@ private struct SensitiveRulesPage: View {
                         let setting = presetBinding(preset)
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 6) {
-                                Toggle(preset.title, isOn: setting.enabled).toggleStyle(.checkbox)
+                                Toggle(preset.title, isOn: setting.enabled)
                                 Spacer(minLength: 8)
                                 ActionPicker(action: setting.action).controlSize(.small).disabled(!setting.wrappedValue.enabled)
                                 HitCount(count: settings.hitCount(.preset(preset)))
@@ -420,7 +420,7 @@ private struct SensitiveRulesPage: View {
                                        settings.hitCount(.universalClipboard), String(localized: "Skipped %d times."))) {
                 Toggle(String(localized: "Don't save content from other devices"),
                        isOn: $settings.captureRules.blacklist.skipUniversalClipboard)
-                    .toggleStyle(.checkbox)
+                    
             }
 
             SettingsRow(label: String(localized: "Text:")) {
@@ -447,7 +447,7 @@ private struct SensitiveRulesPage: View {
     private func limitRow(_ title: String, _ enabled: Binding<Bool>, _ value: Binding<Int>,
                           _ range: ClosedRange<Int>, _ unit: String, _ rule: RuleRef) -> some View {
         HStack(spacing: 6) {
-            Toggle(title, isOn: enabled).toggleStyle(.checkbox)
+            Toggle(title, isOn: enabled)
             NumberField(value: value, range: range, unit: unit).disabled(!enabled.wrappedValue)
             Spacer(minLength: 0)
             HitCount(count: settings.hitCount(rule))
@@ -488,13 +488,14 @@ private struct TestRulesPage: View {
                 TextEditor(text: $sample)
                     .font(.system(size: 12))
                     .frame(width: RuleLayout.listWidth, height: 64)
-                    .overlay(Rectangle().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
-                Picker(String(localized: "Copied from"), selection: $sourceApp) {
-                    Text(String(localized: "Unknown app")).tag("")
-                    ForEach(apps, id: \.self) { Text(appDisplayName($0)).tag($0) }
+                    .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                HStack(spacing: 8) {
+                    Text(String(localized: "Copied from")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    KleinPopUp(options: [("", String(localized: "Unknown app"))]
+                        + apps.map { ($0, appDisplayName($0)) },
+                               selection: $sourceApp)
+                        .frame(width: 200)
                 }
-                .pickerStyle(.menu)
-                .fixedSize()
                 if !sample.isEmpty { TestResultView(verdict: verdict, rules: settings.captureRules) }
             }
         }
@@ -503,6 +504,7 @@ private struct TestRulesPage: View {
 
         SettingsRow(label: String(localized: "Statistics:"), help: statsHelp) {
             Button(String(localized: "Reset Counts")) { settings.resetRuleHits() }
+                .buttonStyle(KleinButtonStyle())
                 .disabled(settings.ruleHitCounts.isEmpty)
         }
 
@@ -511,6 +513,7 @@ private struct TestRulesPage: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Button(String(localized: "Apply Rules to History…")) { makePlan() }
+                        .buttonStyle(KleinButtonStyle())
                         .disabled(planning)
                     if planning { ProgressView().controlSize(.small) }
                 }
@@ -660,13 +663,9 @@ private struct RulesTabBar: View {
     @Binding var selection: PrivacySettings.RulesPage
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(PrivacySettings.RulesPage.allCases) { page in
-                RulesTabItem(title: page.title, isSelected: selection == page) {
-                    selection = page
-                }
-            }
-        }
+        KleinSegmented(options: PrivacySettings.RulesPage.allCases.map { ($0, $0.title) },
+                       selection: $selection)
+            .frame(width: 480)
     }
 }
 
@@ -681,12 +680,12 @@ private struct RulesTabItem: View {
             VStack(spacing: 3) {
                 Text(title)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? SettingsTheme.klein : Color.secondary)
                     .padding(.horizontal, 10)
                     .padding(.top, 4)
                 // 底部指示条
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(isSelected ? Color.accentColor : Color.clear)
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(isSelected ? SettingsTheme.klein : Color.clear)
                     .frame(height: 2)
             }
         }

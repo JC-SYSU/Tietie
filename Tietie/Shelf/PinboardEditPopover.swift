@@ -368,7 +368,7 @@ private struct SymbolSwatch: View {
                 .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.8))
                 .frame(width: 30, height: 30)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isSelected ? Color.accentColor : (isHovering ? Color.primary.opacity(0.08) : .clear))
                 )
         }
@@ -391,7 +391,7 @@ private struct EmojiSwatch: View {
                 .font(.system(size: 15))
                 .frame(width: 30, height: 30)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isSelected ? Color.accentColor : (isHovering ? Color.primary.opacity(0.08) : .clear))
                 )
         }
@@ -418,7 +418,7 @@ private struct EmojiCategoryTab: View {
                 .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
                 .frame(width: 24, height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(isSelected ? Color.accentColor : (isHovering ? Color.primary.opacity(0.08) : .clear))
                 )
         }
