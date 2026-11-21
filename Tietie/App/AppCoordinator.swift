@@ -696,8 +696,13 @@ final class AppCoordinator {
 
         let alert = NSAlert()
         alert.messageText = String(localized: "Tietie needs Accessibility access to paste.")
+        // 面板名按系统版本取: 27.0–27.2 叫「设备控制与数据访问」, 写死「辅助功能」
+        // 会让用户按字面找不到。
         alert.informativeText = String(
-            localized: "Without it, pasting only places the item on the clipboard. Turn on Tietie under Privacy & Security > Accessibility."
+            format: String(
+                localized: "Without it, pasting only places the item on the clipboard. Turn on Tietie under Privacy & Security > %@."
+            ),
+            PermissionGuide.accessibilityPaneTitle
         )
         alert.addButton(withTitle: String(localized: "Open Settings"))
         alert.addButton(withTitle: String(localized: "Later"))
@@ -705,9 +710,7 @@ final class AppCoordinator {
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
 
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
+        PermissionGuide.openAccessibilitySettings()
         return true
     }
 

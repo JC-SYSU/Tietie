@@ -141,7 +141,11 @@
 
 /* Shelf - Permission Banner */
 "Tietie needs Accessibility access to paste." = "贴贴需要辅助功能权限才能粘贴。";
-"Without it, pasting only places the item on the clipboard. Turn on Tietie under Privacy & Security > Accessibility." = "没有这项权限时，粘贴只会把内容放到剪贴板。请在「隐私与安全性」→「辅助功能」中打开贴贴。";
+"Without it, pasting only places the item on the clipboard. Turn on Tietie under Privacy & Security > %@." = "没有这项权限时，粘贴只会把内容放到剪贴板。请在「隐私与安全性」→「%@」中打开贴贴。";
+/* 系统设置里的权限面板名，按 macOS 版本取（见 PermissionGuide）。 */
+"Accessibility" = "辅助功能";
+"Device Control & Data Access" = "设备控制与数据访问";
+"Paste from Other Apps" = "从其他 App 粘贴";
 "Open Settings" = "打开设置";
 "Later" = "稍后";
 
@@ -209,8 +213,19 @@
 "Welcome to Tietie" = "欢迎使用贴贴";
 "A visual shelf for everything you copy." = "你复制的一切都在可视化面板中。";
 "Press ⌥⌘V anytime to open it." = "随时按 ⌥⌘V 打开。";
-"Tietie pastes into the app you are using, which needs Accessibility access." = "贴贴会粘贴到你正在使用的应用，这需要辅助功能权限。";
-"On this version of macOS, allow Tietie to read the clipboard so it can save your history." = "在此版本的 macOS 上，允许贴贴读取剪贴板以保存你的历史记录。";
+"Tietie pastes into the app you are using. Allow it under Privacy & Security > %@." = "贴贴会粘贴到你正在使用的应用。请在「隐私与安全性」→「%@」中允许贴贴。";
+"Paste Permission" = "粘贴权限";
+"Tietie reads the clipboard in the background to save your history. macOS asks once, then you can pin the answer in System Settings." = "贴贴需要在后台读取剪贴板来保存历史记录。macOS 会询问一次，之后你可以在系统设置里固定这个选择。";
+"Tietie only shows up in that list after it has asked once, so request access first." = "贴贴要先请求一次权限，之后才会出现在这个列表里。";
+"Request Clipboard Access" = "请求剪贴板权限";
+"Open Privacy Settings" = "打开隐私设置";
+"The clipboard is empty. Copy any text, then request access again." = "剪贴板是空的。先复制任意文本，再重新请求权限。";
+"Not requested yet" = "尚未请求";
+"Listed in System Settings · set Tietie to Always Allow" = "已出现在系统设置中 · 请把贴贴设为「始终允许」";
+"Denied by System Settings" = "系统设置中已拒绝";
+"No permission needed on this version of macOS" = "此版本的 macOS 无需这项权限";
+"Access granted" = "已授权";
+"Not granted yet" = "尚未授权";
 "You can change this anytime in Settings." = "你可以随时在设置中更改此项。";
 "You are all set." = "一切就绪。";
 "Tietie lives in your menu bar, ready when you need it." = "贴贴常驻菜单栏，随时待命。";

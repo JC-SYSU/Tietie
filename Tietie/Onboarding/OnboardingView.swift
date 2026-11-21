@@ -190,11 +190,18 @@ private struct AccessibilityStep: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            StepHeading(symbol: "accessibility", title: "Accessibility Access")
-            Text("Tietie pastes into the app you are using, which needs Accessibility access.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            // 标题不写「辅助功能」: 27.0–27.2 该面板叫「设备控制与数据访问」,
+            // 用户按标题里的名字去系统设置里找会落空。
+            StepHeading(symbol: "accessibility", title: "Paste Permission")
+            Text(
+                String(
+                    format: String(localized: "Tietie pastes into the app you are using. Allow it under Privacy & Security > %@."),
+                    PermissionGuide.accessibilityPaneTitle
+                )
+            )
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
             Button("Open Accessibility Settings") { requestAccess() }
                 .buttonStyle(.bordered)
             StatusRow(isGranted: isTrusted, grantedText: "Access granted", pendingText: "Not granted yet")
@@ -207,52 +214,105 @@ private struct AccessibilityStep: View {
     private func requestAccess() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
+        PermissionGuide.openAccessibilitySettings()
     }
 }
 
 private struct ClipboardAccessStep: View {
-    @State private var isGranted = false
+    @State private var behavior = NSPasteboard.general.accessBehavior
+    /// 点过「请求权限」但系统没弹窗: 剪贴板是空的, 没有内容可读就不会触发提示。
+    @State private var nothingToRead = false
     private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 16) {
             StepHeading(symbol: "clipboard", title: "Clipboard Access")
-            Text("On this version of macOS, allow Tietie to read the clipboard so it can save your history.")
+            Text("Tietie reads the clipboard in the background to save your history. macOS asks once, then you can pin the answer in System Settings.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Open Privacy Settings") { openPrivacySettings() }
-                .buttonStyle(.bordered)
-            StatusRow(isGranted: isGranted, grantedText: "Access granted", pendingText: "Not granted yet")
+
+            // 先有鸡还是先有蛋: 触发过第一次系统提示之前, 贴贴不会出现在那个列表里
+            // (NSPasteboard.AccessBehavior 文档: 状态保持 .default, 应用不显示)。
+            // 所以先引导触发一次读取, 再让人去设置里固定「始终允许」。
+            if needsSetup {
+                Text("Tietie only shows up in that list after it has asked once, so request access first.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Request Clipboard Access") { requestAccess() }
+                    .buttonStyle(.borderedProminent)
+                if nothingToRead {
+                    Text("The clipboard is empty. Copy any text, then request access again.")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                }
+            } else if behavior != .default {
+                Button("Open Privacy Settings") { PermissionGuide.openPasteboardSettings() }
+                    .buttonStyle(.bordered)
+            }
+
+            statusRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { refreshStatus() }
         .onReceive(timer) { _ in refreshStatus() }
     }
 
-    /// `NSPasteboard.AccessBehavior` reports `.alwaysAllow` once the user has granted
-    /// (or the system has never needed to ask); `.default`/`.ask`/`.alwaysDeny` all mean
-    /// Copy's background pasteboard monitoring isn't reliably granted yet.
-    private func refreshStatus() {
-        if #available(macOS 15.4, *) {
-            isGranted = NSPasteboard.general.accessBehavior == .alwaysAllow
-        }
+    /// 27 起 `.default` 表示还没触发过系统提示，贴贴也还没进列表。
+    private var needsSetup: Bool {
+        behavior == .default && PermissionGuide.pasteboardPrivacyIsEnforced
     }
 
-    private func openPrivacySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-            NSWorkspace.shared.open(url)
+    @ViewBuilder
+    private var statusRow: some View {
+        let (symbol, tint, text): (String, Color, LocalizedStringKey) = {
+            switch behavior {
+            case .alwaysAllow:
+                return ("checkmark.circle.fill", .green, "Access granted")
+            case .ask:
+                return ("exclamationmark.circle", .secondary, "Listed in System Settings · set Tietie to Always Allow")
+            case .alwaysDeny:
+                return ("xmark.circle", .orange, "Denied by System Settings")
+            default:
+                // 26 及更早默认不强制剪贴板权限，`.default` 在这里是「没有这道限制」。
+                return PermissionGuide.pasteboardPrivacyIsEnforced
+                    ? ("circle", .secondary, "Not requested yet")
+                    : ("checkmark.circle", .secondary, "No permission needed on this version of macOS")
+            }
+        }()
+
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+            Text(text)
+                .foregroundStyle(.secondary)
+        }
+        .font(.callout)
+    }
+
+    private func refreshStatus() {
+        behavior = NSPasteboard.general.accessBehavior
+    }
+
+    /// 读一次剪贴板内容, 让系统弹出第一次访问提示。这个提示本身就是让贴贴进入
+    /// 「从其他 App 粘贴」列表的触发条件; 空剪贴板没有内容可读, 系统不会提示。
+    private func requestAccess() {
+        nothingToRead = false
+        _ = NSPasteboard.general.pasteboardItems
+        // 提示是异步的, 稍等一下再读状态: 状态没离开 .default 就说明没弹窗。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            refreshStatus()
+            nothingToRead = behavior == .default
         }
     }
 }
 
 private struct StatusRow: View {
     let isGranted: Bool
-    let grantedText: String
-    let pendingText: String
+    let grantedText: LocalizedStringKey
+    let pendingText: LocalizedStringKey
 
     var body: some View {
         HStack(spacing: 6) {
