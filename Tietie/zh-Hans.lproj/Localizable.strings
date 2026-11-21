@@ -248,6 +248,15 @@
 "Appearance:" = "外观：";
 "Startup:" = "启动：";
 "Menu Bar:" = "菜单栏：";
+"Accessibility:" = "辅助功能：";
+"Clipboard:" = "剪贴板：";
+"Grant Access" = "申请权限";
+"Granted." = "已授权。";
+"Pasting needs this. Turn on Tietie under Privacy & Security > %@." = "粘贴需要这项权限。请在「隐私与安全性」→「%@」中打开贴贴。";
+"Listed in System Settings. Set Tietie to Always Allow so saving history doesn't ask on every copy." = "贴贴已出现在系统设置中。设为「始终允许」，保存历史时才不会每次复制都询问。";
+"Denied in System Settings." = "系统设置中已拒绝。";
+"The clipboard is empty. Copy any text, then grant access again." = "剪贴板是空的。先复制任意文本，再申请一次。";
+"Tietie has to ask once before it appears in the list. Copy any text, then grant access." = "贴贴要先请求一次才会出现在列表里。先复制任意文本，再申请权限。";
 "Show:" = "显示：";
 "Favorites:" = "收藏：";
 "Links:" = "链接：";
